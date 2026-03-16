@@ -11,91 +11,6 @@ class HaNetworkMap extends HTMLElement {
     this.sortDesc = false;
   }
 
-  static get _translations() {
-    return {
-      en: {
-        listTab: 'List',
-        mapTab: 'Map',
-        statsTab: 'Stats',
-        searchPlaceholder: 'Search devices...',
-        deviceName: 'Device Name',
-        category: 'Category',
-        status: 'Status',
-        ipAddress: 'IP Address',
-        macAddress: 'MAC Address',
-        lastSeen: 'Last Seen',
-        noDevicesFound: 'No devices found. Add device_tracker entities to Home Assistant.',
-        phone: 'Phone',
-        tablet: 'Tablet',
-        computer: 'Computer',
-        media: 'Media',
-        smartHome: 'Smart Home',
-        wearable: 'Wearable',
-        other: 'Other',
-        home: 'HOME',
-        away: 'AWAY',
-        unknown: 'UNKNOWN',
-        offline: 'OFFLINE',
-        zone: 'ZONE',
-        totalDevices: 'Total Devices',
-        online: 'Online',
-        offline: 'Offline',
-        newToday: 'New Today',
-        noBandwidthSensors: 'No bandwidth sensors found.',
-        deviceDetail: 'Device:',
-        categoryDetail: 'Category:',
-        statusDetail: 'Status:',
-        ipDetail: 'IP:',
-        macDetail: 'MAC:',
-        lastSeenDetail: 'Last Seen:',
-        router: 'Router',
-      },
-      pl: {
-        listTab: 'Lista',
-        mapTab: 'Mapa',
-        statsTab: 'Statystyki',
-        searchPlaceholder: 'Szukaj urządzeń...',
-        deviceName: 'Nazwa urządzenia',
-        category: 'Kategoria',
-        status: 'Stan',
-        ipAddress: 'Adres IP',
-        macAddress: 'Adres MAC',
-        lastSeen: 'Ostatnio widoczne',
-        noDevicesFound: 'Nie znaleziono urządzeń. Dodaj encje device_tracker do Home Assistant.',
-        phone: 'Telefon',
-        tablet: 'Tablet',
-        computer: 'Komputer',
-        media: 'Media',
-        smartHome: 'Inteligentny dom',
-        wearable: 'Urządzenie do noszenia',
-        other: 'Inne',
-        home: 'W DOMU',
-        away: 'POZA DOMEM',
-        unknown: 'NIEZNANY',
-        offline: 'NIEDOSTĘPNY',
-        zone: 'STREFA',
-        totalDevices: 'Razem urządzeń',
-        online: 'Online',
-        offline: 'Offline',
-        newToday: 'Nowe dzisiaj',
-        noBandwidthSensors: 'Nie znaleziono czujników przepustowości.',
-        deviceDetail: 'Urządzenie:',
-        categoryDetail: 'Kategoria:',
-        statusDetail: 'Stan:',
-        ipDetail: 'IP:',
-        macDetail: 'MAC:',
-        lastSeenDetail: 'Ostatnio widoczne:',
-        router: 'Router',
-      }
-    };
-  }
-
-  _t(key) {
-    const lang = this._hass?.language || 'en';
-    const T = HaNetworkMap._translations;
-    return (T[lang] || T['en'])[key] || T['en'][key] || key;
-  }
-
   setConfig(config) {
     this.config = config;
     this.title = config.title || 'Network Map';
@@ -103,55 +18,32 @@ class HaNetworkMap extends HTMLElement {
   }
 
   set hass(hass) {
-    this._hass = hass;
+    this.hass = hass;
     this.updateDevices();
     this.render();
   }
 
   updateDevices() {
-    const states = this._hass.states;
+    const states = this.hass.states;
     this.devices = [];
 
     Object.keys(states).forEach(entityId => {
       if (entityId.startsWith('device_tracker.')) {
         const state = states[entityId];
-        const attr = state.attributes || {};
-        const friendlyName = attr.friendly_name || entityId.replace('device_tracker.', '');
-        const rawState = (state.state || '').toLowerCase();
-
-        // Map HA device_tracker states properly
-        let status;
-        if (rawState === 'home') status = 'home';
-        else if (rawState === 'not_home' || rawState === 'away') status = 'away';
-        else if (rawState === 'unavailable') status = 'offline';
-        else if (rawState === 'unknown') status = 'unknown';
-        else status = 'zone'; // Named zone (e.g., "work", "school", custom zone)
-
-        // IP: try multiple attribute names (different integrations use different keys)
-        const ip = attr.ip || attr.ip_address || attr.local_ip || attr.host_ip || null;
-        // MAC: try multiple attribute names
-        const mac = attr.mac || attr.mac_address || attr.host_mac || null;
-        // Battery
-        const battery = attr.battery_level || attr.battery || null;
-        // GPS
-        const hasGps = attr.latitude !== undefined && attr.longitude !== undefined;
+        const friendlyName = state.attributes.friendly_name || entityId.replace('device_tracker.', '');
+        const isHome = state.state === 'home';
+        const status = state.state === 'home' ? 'home' : state.state === 'away' ? 'away' : 'unknown';
 
         const device = {
           id: entityId,
           name: friendlyName,
           status: status,
-          rawState: state.state, // Keep original for display (zone names etc.)
-          ip: ip || (attr.source_type === 'router' ? 'DHCP' : ''),
-          mac: mac || '',
-          sourceType: attr.source_type || 'unknown',
-          hostName: attr.host_name || friendlyName,
-          lastSeen: state.last_changed || state.last_updated || new Date().toISOString(),
+          ip: state.attributes.ip_address || 'N/A',
+          mac: state.attributes.mac || 'N/A',
+          lastSeen: state.attributes.last_seen || state.last_updated || new Date().toISOString(),
           icon: this.getCategoryIcon(friendlyName),
           category: this.categorizeDevice(friendlyName),
-          battery: battery,
-          hasGps: hasGps,
-          gpsAccuracy: attr.gps_accuracy || null,
-          attributes: attr
+          attributes: state.attributes
         };
         this.devices.push(device);
       }
@@ -174,15 +66,15 @@ class HaNetworkMap extends HTMLElement {
   getCategoryIcon(name) {
     const category = this.categorizeDevice(name);
     const icons = {
-      'Phone': '??',
-      'Tablet': '??',
-      'Computer': '??',
-      'Media': '??',
-      'Smart Home': '??',
-      'Wearable': '?',
-      'Other': '??'
+      'Phone': '📱',
+      'Tablet': '📲',
+      'Computer': '💻',
+      'Media': '📺',
+      'Smart Home': '🏠',
+      'Wearable': '⌚',
+      'Other': '📡'
     };
-    return icons[category] || '??';
+    return icons[category] || '📡';
   }
 
   filterAndSort() {
@@ -196,9 +88,9 @@ class HaNetworkMap extends HTMLElement {
 
       switch (this.sortBy) {
         case 'status':
-          const statusOrder = { home: 0, zone: 1, away: 2, unknown: 3, offline: 4 };
-          aVal = statusOrder[a.status] !== undefined ? statusOrder[a.status] : 5;
-          bVal = statusOrder[b.status] !== undefined ? statusOrder[b.status] : 5;
+          const statusOrder = { home: 0, unknown: 1, away: 2 };
+          aVal = statusOrder[a.status] || 3;
+          bVal = statusOrder[b.status] || 3;
           break;
         case 'category':
           aVal = a.category;
@@ -221,6 +113,268 @@ class HaNetworkMap extends HTMLElement {
   render() {
     const styles = `
       <style>
+        :host {
+          --primary-color: var(--ha-color-primary, #03a9f4);
+          --success-color: #4caf50;
+          --warning-color: #ff9800;
+          --danger-color: #f44336;
+          --text-primary: var(--primary-text-color, #212121);
+          --text-secondary: var(--secondary-text-color, #727272);
+          --bg-primary: var(--card-background-color, #ffffff);
+          --bg-secondary: var(--secondary-background-color, #f5f5f5);
+          --border-color: var(--divider-color, #e0e0e0);
+        }
+
+        .card-container {
+          background: var(--bg-primary);
+          border-radius: 12px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          padding: 16px;
+          font-family: var(--primary-font-family, Roboto, sans-serif);
+          color: var(--text-primary);
+        }
+
+        .card-header {
+          font-size: 24px;
+          font-weight: 500;
+          margin-bottom: 16px;
+          color: var(--text-primary);
+        }
+
+        .tabs {
+          display: flex;
+          border-bottom: 2px solid var(--border-color);
+          margin-bottom: 16px;
+          gap: 8px;
+        }
+
+        .tab-btn {
+          padding: 12px 16px;
+          border: none;
+          background: none;
+          cursor: pointer;
+          color: var(--text-secondary);
+          font-size: 14px;
+          font-weight: 500;
+          border-bottom: 3px solid transparent;
+          transition: all 0.3s ease;
+        }
+
+        .tab-btn:hover {
+          color: var(--text-primary);
+        }
+
+        .tab-btn.active {
+          color: var(--primary-color);
+          border-bottom-color: var(--primary-color);
+        }
+
+        .tab-content {
+          display: none;
+        }
+
+        .tab-content.active {
+          display: block;
+        }
+
+        .search-bar {
+          margin-bottom: 16px;
+          display: flex;
+          gap: 8px;
+        }
+
+        .search-input {
+          flex: 1;
+          padding: 10px 12px;
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          font-size: 14px;
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+        }
+
+        .search-input::placeholder {
+          color: var(--text-secondary);
+        }
+
+        .table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 14px;
+        }
+
+        .table thead {
+          background: var(--bg-secondary);
+          border-bottom: 2px solid var(--border-color);
+        }
+
+        .table th {
+          padding: 12px;
+          text-align: left;
+          font-weight: 600;
+          color: var(--text-primary);
+          cursor: pointer;
+          user-select: none;
+          white-space: nowrap;
+        }
+
+        .table th:hover {
+          background: var(--border-color);
+        }
+
+        .sort-indicator {
+          display: inline-block;
+          margin-left: 4px;
+          font-size: 11px;
+        }
+
+        .table td {
+          padding: 12px;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .table tbody tr:hover {
+          background: var(--bg-secondary);
+          cursor: pointer;
+        }
+
+        .status-badge {
+          display: inline-block;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        .status-home {
+          background: #c8e6c9;
+          color: #1b5e20;
+        }
+
+        .status-away {
+          background: #ffccbc;
+          color: #bf360c;
+        }
+
+        .status-unknown {
+          background: #eeeeee;
+          color: #424242;
+        }
+
+        .device-icon {
+          font-size: 18px;
+          margin-right: 6px;
+        }
+
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 16px;
+          margin-bottom: 24px;
+        }
+
+        .stat-card {
+          background: var(--bg-secondary);
+          padding: 16px;
+          border-radius: 8px;
+          border-left: 4px solid var(--primary-color);
+        }
+
+        .stat-card.online {
+          border-left-color: var(--success-color);
+        }
+
+        .stat-card.offline {
+          border-left-color: var(--danger-color);
+        }
+
+        .stat-value {
+          font-size: 28px;
+          font-weight: 700;
+          color: var(--text-primary);
+          margin-bottom: 4px;
+        }
+
+        .stat-label {
+          font-size: 12px;
+          color: var(--text-secondary);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .canvas-container {
+          margin: 20px 0;
+          text-align: center;
+          background: var(--bg-secondary);
+          border-radius: 8px;
+          padding: 16px;
+        }
+
+        .canvas-container canvas {
+          max-width: 100%;
+          height: auto;
+          border-radius: 6px;
+        }
+
+        .device-detail {
+          background: var(--bg-secondary);
+          padding: 12px;
+          border-radius: 6px;
+          margin-top: 12px;
+          font-size: 12px;
+        }
+
+        .detail-row {
+          display: flex;
+          justify-content: space-between;
+          padding: 6px 0;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .detail-row:last-child {
+          border-bottom: none;
+        }
+
+        .detail-label {
+          color: var(--text-secondary);
+          font-weight: 500;
+        }
+
+        .detail-value {
+          color: var(--text-primary);
+          word-break: break-all;
+        }
+
+        .bandwidth-bar {
+          margin: 12px 0;
+        }
+
+        .bandwidth-label {
+          font-size: 12px;
+          margin-bottom: 4px;
+          color: var(--text-secondary);
+        }
+
+        .bandwidth-bar-bg {
+          height: 6px;
+          background: var(--border-color);
+          border-radius: 3px;
+          overflow: hidden;
+        }
+
+        .bandwidth-bar-fill {
+          height: 100%;
+          background: linear-gradient(90deg, var(--primary-color), var(--warning-color));
+          border-radius: 3px;
+        }
+
+        .empty-state {
+          text-align: center;
+          padding: 32px 16px;
+          color: var(--text-secondary);
+        }
+      
+/* === Modern Bento Light Mode === */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
@@ -519,9 +673,9 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
       <div class="card-container">
         <div class="card-header">${this.title}</div>
         <div class="tabs">
-          <button class="tab-btn ${this.activeTab === 'list' ? 'active' : ''}" data-tab="list">${this._t('listTab')}</button>
-          <button class="tab-btn ${this.activeTab === 'map' ? 'active' : ''}" data-tab="map">${this._t('mapTab')}</button>
-          <button class="tab-btn ${this.activeTab === 'stats' ? 'active' : ''}" data-tab="stats">${this._t('statsTab')}</button>
+          <button class="tab-btn ${this.activeTab === 'list' ? 'active' : ''}" data-tab="list">List</button>
+          <button class="tab-btn ${this.activeTab === 'map' ? 'active' : ''}" data-tab="map">Map</button>
+          <button class="tab-btn ${this.activeTab === 'stats' ? 'active' : ''}" data-tab="stats">Stats</button>
         </div>
         ${content}
       </div>
@@ -545,37 +699,33 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
 
   renderListTab() {
     if (this.devices.length === 0) {
-      return `<div class="empty-state">${this._t('noDevicesFound')}</div>`;
+      return '<div class="empty-state">No devices found. Add device_tracker entities to Home Assistant.</div>';
     }
 
-    const rows = this.filteredDevices.map((device, idx) => {
-      const ipDisplay = device.ip || (device.hasGps ? '?? GPS' : '—');
-      const macDisplay = device.mac || (device.battery !== null ? `?? ${device.battery}%` : '—');
-      const statusLabel = device.status === 'zone' ? device.rawState : this._t(device.status);
-      return `
+    const rows = this.filteredDevices.map((device, idx) => `
       <tr data-device-id="${device.id}" data-index="${idx}">
         <td><span class="device-icon">${device.icon}</span>${device.name}</td>
         <td>${device.category}</td>
-        <td><span class="status-badge status-${device.status}">${statusLabel}</span></td>
-        <td>${ipDisplay}</td>
-        <td>${macDisplay}</td>
+        <td><span class="status-badge status-${device.status}">${device.status.toUpperCase()}</span></td>
+        <td>${device.ip}</td>
+        <td>${device.mac}</td>
         <td>${new Date(device.lastSeen).toLocaleString()}</td>
-      </tr>`;
-    }).join('');
+      </tr>
+    `).join('');
 
     return `
       <div class="search-bar">
-        <input type="text" class="search-input" id="searchInput" placeholder="${this._t('searchPlaceholder')}">
+        <input type="text" class="search-input" id="searchInput" placeholder="Search devices...">
       </div>
       <table class="table">
         <thead>
           <tr>
-            <th data-sort="name">${this._t('deviceName')} <span class="sort-indicator" id="sort-name"></span></th>
-            <th data-sort="category">${this._t('category')} <span class="sort-indicator" id="sort-category"></span></th>
-            <th data-sort="status">${this._t('status')} <span class="sort-indicator" id="sort-status"></span></th>
-            <th>${this._t('ipAddress')}</th>
-            <th>${this._t('macAddress')}</th>
-            <th>${this._t('lastSeen')}</th>
+            <th data-sort="name">Device Name <span class="sort-indicator" id="sort-name"></span></th>
+            <th data-sort="category">Category <span class="sort-indicator" id="sort-category"></span></th>
+            <th data-sort="status">Status <span class="sort-indicator" id="sort-status"></span></th>
+            <th>IP Address</th>
+            <th>MAC Address</th>
+            <th>Last Seen</th>
           </tr>
         </thead>
         <tbody>
@@ -586,13 +736,9 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
   }
 
   renderMapTab() {
-    if (this.devices.length === 0) {
-      return `<div class="empty-state">${this._t('noDevicesFound')}</div>`;
-    }
-
     return `
       <div class="canvas-container">
-        <canvas id="networkCanvas" width="700" height="700"></canvas>
+        <canvas id="networkCanvas" width="600" height="600"></canvas>
       </div>
       <div id="deviceDetail"></div>
     `;
@@ -600,8 +746,8 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
 
   renderStatsTab() {
     const totalDevices = this.devices.length;
-    const onlineDevices = this.devices.filter(d => d.status === 'home' || d.status === 'zone').length;
-    const offlineDevices = this.devices.filter(d => d.status === 'away' || d.status === 'offline' || d.status === 'unknown').length;
+    const onlineDevices = this.devices.filter(d => d.status === 'home').length;
+    const offlineDevices = this.devices.filter(d => d.status === 'away').length;
     const todayNew = this.devices.filter(d => {
       const lastSeen = new Date(d.lastSeen);
       const today = new Date();
@@ -614,19 +760,19 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-value">${totalDevices}</div>
-          <div class="stat-label">${this._t('totalDevices')}</div>
+          <div class="stat-label">Total Devices</div>
         </div>
         <div class="stat-card online">
           <div class="stat-value">${onlineDevices}</div>
-          <div class="stat-label">${this._t('online')}</div>
+          <div class="stat-label">Online</div>
         </div>
         <div class="stat-card offline">
           <div class="stat-value">${offlineDevices}</div>
-          <div class="stat-label">${this._t('offline')}</div>
+          <div class="stat-label">Offline</div>
         </div>
         <div class="stat-card">
           <div class="stat-value">${todayNew}</div>
-          <div class="stat-label">${this._t('newToday')}</div>
+          <div class="stat-label">New Today</div>
         </div>
       </div>
       ${bandwidthContent}
@@ -634,7 +780,7 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
   }
 
   getBandwidthContent() {
-    const states = this._hass.states;
+    const states = this.hass.states;
     let bandwidthHtml = '';
 
     Object.keys(states).forEach(entityId => {
@@ -656,7 +802,7 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
       }
     });
 
-    return bandwidthHtml || `<div class="empty-state" style="padding: 16px;">${this._t('noBandwidthSensors')}</div>`;
+    return bandwidthHtml || '<div class="empty-state" style="padding: 16px;">No bandwidth sensors found.</div>';
   }
 
   drawNetworkMap(canvas) {
@@ -667,7 +813,7 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
     const centerY = canvas.height / 2;
     const radius = 120;
 
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--card-background-color') || 'var(--card-background-color, #1e1e1e)';
+    ctx.fillStyle = this.getComputedStyle(document.documentElement).getPropertyValue('--card-background-color') || '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.fillStyle = '#4caf50';
@@ -679,60 +825,40 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(this._t('router'), centerX, centerY);
+    ctx.fillText('Router', centerX, centerY);
 
-    // Group and sort: home first, then zone, away, unknown, offline
-    const statusPriority = { home: 0, zone: 1, away: 2, unknown: 3, offline: 4 };
-    const sorted = [...this.devices].sort((a, b) => (statusPriority[a.status] || 5) - (statusPriority[b.status] || 5));
-    const maxDevices = Math.min(sorted.length, 24);
-    const allDisplayed = sorted.slice(0, maxDevices);
-
-    // Adjust radius based on device count
-    const dynamicRadius = maxDevices > 12 ? Math.min(canvas.width, canvas.height) * 0.38 : radius;
-
-    const colorMap = { home: '#4caf50', zone: 'var(--primary-color, #03a9f4)', away: '#ff9800', offline: '#f44336', unknown: '#9e9e9e' };
+    const onlineDevices = this.devices.filter(d => d.status === 'home');
+    const offlineDevices = this.devices.filter(d => d.status !== 'home');
+    const allDisplayed = [...onlineDevices, ...offlineDevices].slice(0, 12);
 
     allDisplayed.forEach((device, index) => {
-      const angle = (index / allDisplayed.length) * Math.PI * 2 - Math.PI / 2;
-      const x = centerX + Math.cos(angle) * dynamicRadius;
-      const y = centerY + Math.sin(angle) * dynamicRadius;
+      const angle = (index / allDisplayed.length) * Math.PI * 2;
+      const x = centerX + Math.cos(angle) * radius;
+      const y = centerY + Math.sin(angle) * radius;
 
-      // Connection line
-      const color = colorMap[device.status] || '#9e9e9e';
-      ctx.strokeStyle = color + '44';
+      const color = device.status === 'home' ? '#4caf50' : device.status === 'away' ? '#f44336' : '#9e9e9e';
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, 10, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#ddd';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(centerX, centerY);
       ctx.lineTo(x, y);
       ctx.stroke();
 
-      // Device dot
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(x, y, 8, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Label (truncated)
-      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--primary-text-color') || '#333';
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      const label = device.name.length > 12 ? device.name.substring(0, 10) + '…' : device.name;
-      ctx.fillText(label, x, y + 12);
-
       device.canvasX = x;
       device.canvasY = y;
-      device.canvasRadius = 8;
+      device.canvasRadius = 10;
     });
 
-    // Orbit circle
-    ctx.strokeStyle = (getComputedStyle(document.documentElement).getPropertyValue('--divider-color') || '#ddd') + '66';
+    ctx.strokeStyle = '#ddd';
     ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
     ctx.beginPath();
-    ctx.arc(centerX, centerY, dynamicRadius, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.setLineDash([]);
   }
 
   attachEventListeners() {
@@ -793,9 +919,9 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const statusPriority = { home: 0, zone: 1, away: 2, unknown: 3, offline: 4 };
-    const sorted = [...this.devices].sort((a, b) => (statusPriority[a.status] || 5) - (statusPriority[b.status] || 5));
-    const allDisplayed = sorted.slice(0, 24);
+    const onlineDevices = this.devices.filter(d => d.status === 'home');
+    const offlineDevices = this.devices.filter(d => d.status !== 'home');
+    const allDisplayed = [...onlineDevices, ...offlineDevices].slice(0, 12);
 
     allDisplayed.forEach(device => {
       if (device.canvasX && device.canvasY) {
@@ -810,47 +936,33 @@ canvas, .canvas-container canvas { width: 100%; height: 200px; border: 1px solid
   showDeviceDetail(device) {
     const detailDiv = this.shadowRoot.querySelector('#deviceDetail');
     const lastSeenDate = new Date(device.lastSeen).toLocaleString();
-    const ipDisplay = device.ip || (device.hasGps ? '?? GPS tracker' : '—');
-    const macDisplay = device.mac || '—';
-    const statusLabel = device.status === 'zone' ? device.rawState : this._t(device.status);
-    const extraRows = [];
-    if (device.battery !== null) {
-      extraRows.push(`<div class="detail-row"><span class="detail-label">?? Battery:</span><span class="detail-value">${device.battery}%</span></div>`);
-    }
-    if (device.sourceType && device.sourceType !== 'unknown') {
-      extraRows.push(`<div class="detail-row"><span class="detail-label">Source:</span><span class="detail-value">${device.sourceType}</span></div>`);
-    }
-    if (device.hasGps && device.gpsAccuracy) {
-      extraRows.push(`<div class="detail-row"><span class="detail-label">GPS Accuracy:</span><span class="detail-value">${device.gpsAccuracy}m</span></div>`);
-    }
 
     detailDiv.innerHTML = `
       <div class="device-detail">
         <div class="detail-row">
-          <span class="detail-label">${this._t('deviceDetail')}</span>
+          <span class="detail-label">Device:</span>
           <span class="detail-value">${device.icon} ${device.name}</span>
         </div>
         <div class="detail-row">
-          <span class="detail-label">${this._t('categoryDetail')}</span>
+          <span class="detail-label">Category:</span>
           <span class="detail-value">${device.category}</span>
         </div>
         <div class="detail-row">
-          <span class="detail-label">${this._t('statusDetail')}</span>
-          <span class="detail-value">${statusLabel}</span>
+          <span class="detail-label">Status:</span>
+          <span class="detail-value">${device.status.toUpperCase()}</span>
         </div>
         <div class="detail-row">
-          <span class="detail-label">${this._t('ipDetail')}</span>
-          <span class="detail-value">${ipDisplay}</span>
+          <span class="detail-label">IP:</span>
+          <span class="detail-value">${device.ip}</span>
         </div>
         <div class="detail-row">
-          <span class="detail-label">${this._t('macDetail')}</span>
-          <span class="detail-value">${macDisplay}</span>
+          <span class="detail-label">MAC:</span>
+          <span class="detail-value">${device.mac}</span>
         </div>
         <div class="detail-row">
-          <span class="detail-label">${this._t('lastSeenDetail')}</span>
+          <span class="detail-label">Last Seen:</span>
           <span class="detail-value">${lastSeenDate}</span>
         </div>
-        ${extraRows.join('')}
       </div>
     `;
   }
@@ -880,14 +992,3 @@ window.customCards.push({
   name: 'Network Map',
   description: 'Visualize your home network devices with list, map, and statistics views'
 });
-
-// Auto-load HA Tools Panel (if not already registered)
-if (!customElements.get('ha-tools-panel')) {
-  const _currentScript = document.currentScript?.src || '';
-  const _baseUrl = _currentScript.substring(0, _currentScript.lastIndexOf('/') + 1);
-  if (_baseUrl) {
-    const _s = document.createElement('script');
-    _s.src = _baseUrl + 'ha-tools-panel.js';
-    document.head.appendChild(_s);
-  }
-}
