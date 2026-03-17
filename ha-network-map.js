@@ -164,6 +164,12 @@ class HaNetworkMap extends HTMLElement {
         const battery = attr.battery_level || attr.battery || null;
         // GPS
         const hasGps = attr.latitude !== undefined && attr.longitude !== undefined;
+        // WiFi / Network info
+        const ssid = attr.essid || attr.ssid || attr.wifi_name || attr.ap || null;
+        const rssi = attr.rssi || attr.signal_strength || attr.wifi_signal || null;
+        const connectionType = attr.connection_type || attr.network_type || (attr.is_wired ? 'ethernet' : (ssid ? 'wifi' : null));
+        const speed = attr.link_speed || attr.connection_speed || null;
+        const uptime = attr.uptime || attr.connected_since || null;
 
         const device = {
           id: entityId,
@@ -180,6 +186,11 @@ class HaNetworkMap extends HTMLElement {
           battery: battery,
           hasGps: hasGps,
           gpsAccuracy: attr.gps_accuracy || null,
+          ssid: ssid,
+          rssi: rssi,
+          connectionType: connectionType,
+          speed: speed,
+          uptime: uptime,
           attributes: attr
         };
         this.devices.push(device);
@@ -1039,6 +1050,23 @@ canvas {
     }
     if (device.sourceType && device.sourceType !== 'unknown') {
       extraRows.push(`<div class="detail-row"><span class="detail-label">Source:</span><span class="detail-value">${device.sourceType}</span></div>`);
+    }
+    if (device.ssid) {
+      extraRows.push(`<div class="detail-row"><span class="detail-label">📶 WiFi:</span><span class="detail-value">${device.ssid}</span></div>`);
+    }
+    if (device.rssi !== null && device.rssi !== undefined) {
+      const signal = device.rssi > -50 ? 'Excellent' : device.rssi > -60 ? 'Good' : device.rssi > -70 ? 'Fair' : 'Weak';
+      extraRows.push(`<div class="detail-row"><span class="detail-label">📡 Signal:</span><span class="detail-value">${device.rssi} dBm (${signal})</span></div>`);
+    }
+    if (device.connectionType) {
+      const connIcon = device.connectionType === 'ethernet' ? '🔌' : '📶';
+      extraRows.push(`<div class="detail-row"><span class="detail-label">${connIcon} Connection:</span><span class="detail-value">${device.connectionType}</span></div>`);
+    }
+    if (device.speed) {
+      extraRows.push(`<div class="detail-row"><span class="detail-label">⚡ Speed:</span><span class="detail-value">${device.speed} Mbps</span></div>`);
+    }
+    if (device.uptime) {
+      extraRows.push(`<div class="detail-row"><span class="detail-label">⏱️ Uptime:</span><span class="detail-value">${device.uptime}</span></div>`);
     }
     if (device.hasGps && device.gpsAccuracy) {
       extraRows.push(`<div class="detail-row"><span class="detail-label">GPS Accuracy:</span><span class="detail-value">${device.gpsAccuracy}m</span></div>`);
