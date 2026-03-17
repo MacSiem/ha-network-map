@@ -1,5 +1,5 @@
 {
-  "name": "Network Map",
-  "render_readme": true,
-  "content_in_root": true
+    "name":  "Network Map",
+    "filename":  "ha-network-map.js",
+    "render_readme":  true
 }
