@@ -16,6 +16,9 @@ class HaNetworkMap extends HTMLElement {
     this.searchQuery = '';
     this.sortBy = 'name';
     this.sortDesc = false;
+    // --- Chart.js instances ---
+    this.chartInstances = {};
+    this.chartJsLoaded = false;
   }
 
   static get _translations() {
@@ -56,6 +59,9 @@ class HaNetworkMap extends HTMLElement {
         macDetail: 'MAC:',
         lastSeenDetail: 'Last Seen:',
         router: 'Router',
+        devicesByStatus: 'Devices by Status',
+        devicesByCategory: 'Devices by Category',
+        bandwidthUsage: 'Bandwidth Usage',
       },
       pl: {
         listTab: 'Lista',
@@ -93,6 +99,9 @@ class HaNetworkMap extends HTMLElement {
         macDetail: 'MAC:',
         lastSeenDetail: 'Ostatnio widoczne:',
         router: 'Router',
+        devicesByStatus: 'Urządzenia wg stanu',
+        devicesByCategory: 'Urządzenia wg kategorii',
+        bandwidthUsage: 'Użycie przepustowości',
       }
     };
   }
@@ -115,9 +124,11 @@ class HaNetworkMap extends HTMLElement {
     const now = Date.now();
     if (!this._firstHassRender) {
       this._firstHassRender = true;
-      this.updateDevices();
-      this.render();
-      this._lastRenderTime = now;
+      this._loadChartJS().then(() => {
+        this.updateDevices();
+        this.render();
+        this._lastRenderTime = now;
+      });
       return;
     }
     if (now - (this._lastRenderTime || 0) < 5000) {
@@ -135,6 +146,30 @@ class HaNetworkMap extends HTMLElement {
     this.updateDevices();
     this.render();
     this._lastRenderTime = now;
+  }
+
+  _loadChartJS() {
+    return new Promise((resolve) => {
+      if (window.Chart) {
+        this.chartJsLoaded = true;
+        resolve();
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js';
+      script.async = true;
+      script.onload = () => {
+        this.chartJsLoaded = true;
+        resolve();
+      };
+      script.onerror = () => {
+        console.warn('Failed to load Chart.js from CDN');
+        this.chartJsLoaded = false;
+        resolve();
+      };
+      document.head.appendChild(script);
+    });
   }
 
   updateDevices() {
@@ -445,7 +480,7 @@ canvas {
   border-radius: var(--bento-radius-xs);
   cursor: pointer;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 5;
   font-family: 'Inter', sans-serif;
   transition: var(--bento-transition);
 }
@@ -683,6 +718,23 @@ canvas {
           border-radius: 6px;
         }
 
+        .chart-container {
+          position: relative;
+          margin: 20px 0;
+          background: var(--bg-secondary);
+          border-radius: 8px;
+          padding: 16px;
+          min-height: 300px;
+        }
+
+        .chart-title {
+          font-size: 16px;
+          font-weight: 600;
+          color: var(--text-primary);
+          margin-bottom: 12px;
+          text-align: center;
+        }
+
         .device-detail {
           background: var(--bg-secondary);
           padding: 12px;
@@ -752,11 +804,13 @@ canvas {
           table { font-size: 12px; }
           td, th { padding: 6px 8px; word-break: break-all; }
           .card { padding: 12px; }
+          .chart-container { min-height: 250px; }
         }
         @media (max-width: 480px) {
           .device-list { gap: 8px; }
           .tab { font-size: 11px; padding: 5px 8px; }
           canvas { max-width: 100%; }
+          .chart-container { min-height: 200px; }
         }
       </style>
     `;
@@ -767,9 +821,9 @@ canvas {
       <div class="card-container">
         <div class="card-header">${this.title}</div>
         <div class="tabs">
-          <button class="tab-btn ${this.activeTab === 'list' ? 'active' : ''}" data-tab="list">${this._t('listTab')}</button>
-          <button class="tab-btn ${this.activeTab === 'map' ? 'active' : ''}" data-tab="map">${this._t('mapTab')}</button>
-          <button class="tab-btn ${this.activeTab === 'stats' ? 'active' : ''}" data-tab="stats">${this._t('statsTab')}</button>
+          <button class="tab-btn ${this.activeTab === 'list' ? 'active' : ''}\" data-tab=\"list\">${this._t('listTab')}</button>
+          <button class="tab-btn ${this.activeTab === 'map' ? 'active' : ''}\" data-tab=\"map\">${this._t('mapTab')}</button>
+          <button class="tab-btn ${this.activeTab === 'stats' ? 'active' : ''}\" data-tab=\"stats\">${this._t('statsTab')}</button>
         </div>
         ${content}
       </div>
@@ -793,7 +847,7 @@ canvas {
 
   renderListTab() {
     if (this.devices.length === 0) {
-      return `<div class="empty-state">${this._t('noDevicesFound')}</div>`;
+      return `<div class=\"empty-state\">${this._t('noDevicesFound')}</div>`;
     }
 
     const rows = this.filteredDevices.map((device, idx) => {
@@ -801,10 +855,10 @@ canvas {
       const macDisplay = device.mac || (device.battery !== null ? `🔋 ${device.battery}%` : '—');
       const statusLabel = device.status === 'zone' ? device.rawState : this._t(device.status);
       return `
-      <tr data-device-id="${device.id}" data-index="${idx}">
-        <td><span class="device-icon">${device.icon}</span>${device.name}</td>
+      <tr data-device-id=\"${device.id}\" data-index=\"${idx}\">
+        <td><span class=\"device-icon\">${device.icon}</span>${device.name}</td>
         <td>${device.category}</td>
-        <td><span class="status-badge status-${device.status}">${statusLabel}</span></td>
+        <td><span class=\"status-badge status-${device.status}\">${statusLabel}</span></td>
         <td>${ipDisplay}</td>
         <td>${macDisplay}</td>
         <td>${new Date(device.lastSeen).toLocaleString()}</td>
@@ -812,15 +866,15 @@ canvas {
     }).join('');
 
     return `
-      <div class="search-bar">
-        <input type="text" class="search-input" id="searchInput" placeholder="${this._t('searchPlaceholder')}">
+      <div class=\"search-bar\">
+        <input type=\"text\" class=\"search-input\" id=\"searchInput\" placeholder=\"${this._t('searchPlaceholder')}\">
       </div>
-      <table class="table">
+      <table class=\"table\">
         <thead>
           <tr>
-            <th data-sort="name">${this._t('deviceName')} <span class="sort-indicator" id="sort-name"></span></th>
-            <th data-sort="category">${this._t('category')} <span class="sort-indicator" id="sort-category"></span></th>
-            <th data-sort="status">${this._t('status')} <span class="sort-indicator" id="sort-status"></span></th>
+            <th data-sort=\"name\">${this._t('deviceName')} <span class=\"sort-indicator\" id=\"sort-name\"></span></th>
+            <th data-sort=\"category\">${this._t('category')} <span class=\"sort-indicator\" id=\"sort-category\"></span></th>
+            <th data-sort=\"status\">${this._t('status')} <span class=\"sort-indicator\" id=\"sort-status\"></span></th>
             <th>${this._t('ipAddress')}</th>
             <th>${this._t('macAddress')}</th>
             <th>${this._t('lastSeen')}</th>
@@ -835,14 +889,14 @@ canvas {
 
   renderMapTab() {
     if (this.devices.length === 0) {
-      return `<div class="empty-state">${this._t('noDevicesFound')}</div>`;
+      return `<div class=\"empty-state\">${this._t('noDevicesFound')}</div>`;
     }
 
     return `
-      <div class="canvas-container">
-        <canvas id="networkCanvas" width="700" height="700"></canvas>
+      <div class=\"canvas-container\">
+        <canvas id=\"networkCanvas\" width=\"700\" height=\"700\"></canvas>
       </div>
-      <div id="deviceDetail"></div>
+      <div id=\"deviceDetail\"></div>
     `;
   }
 
@@ -857,27 +911,57 @@ canvas {
     }).length;
 
     const bandwidthContent = this.getBandwidthContent();
+    const chartsContent = this.chartJsLoaded ? this.getChartsContent() : '';
 
     return `
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-value">${totalDevices}</div>
-          <div class="stat-label">${this._t('totalDevices')}</div>
+      <div class=\"stats-grid\">
+        <div class=\"stat-card\">
+          <div class=\"stat-value\">${totalDevices}</div>
+          <div class=\"stat-label\">${this._t('totalDevices')}</div>
         </div>
-        <div class="stat-card online">
-          <div class="stat-value">${onlineDevices}</div>
-          <div class="stat-label">${this._t('online')}</div>
+        <div class=\"stat-card online\">
+          <div class=\"stat-value\">${onlineDevices}</div>
+          <div class=\"stat-label\">${this._t('online')}</div>
         </div>
-        <div class="stat-card offline">
-          <div class="stat-value">${offlineDevices}</div>
-          <div class="stat-label">${this._t('offline')}</div>
+        <div class=\"stat-card offline\">
+          <div class=\"stat-value\">${offlineDevices}</div>
+          <div class=\"stat-label\">${this._t('offline')}</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-value">${todayNew}</div>
-          <div class="stat-label">${this._t('newToday')}</div>
+        <div class=\"stat-card\">
+          <div class=\"stat-value\">${todayNew}</div>
+          <div class=\"stat-label\">${this._t('newToday')}</div>
         </div>
       </div>
+      ${chartsContent}
       ${bandwidthContent}
+    `;
+  }
+
+  getChartsContent() {
+    // Status distribution chart
+    const statusCounts = {
+      home: this.devices.filter(d => d.status === 'home').length,
+      zone: this.devices.filter(d => d.status === 'zone').length,
+      away: this.devices.filter(d => d.status === 'away').length,
+      unknown: this.devices.filter(d => d.status === 'unknown').length,
+      offline: this.devices.filter(d => d.status === 'offline').length
+    };
+
+    // Category distribution chart
+    const categoryCounts = {};
+    this.devices.forEach(d => {
+      categoryCounts[d.category] = (categoryCounts[d.category] || 0) + 1;
+    });
+
+    return `
+      <div class=\"chart-container\">
+        <div class=\"chart-title\">${this._t('devicesByStatus')}</div>
+        <canvas id=\"statusChart\" width=\"400\" height=\"200\"></canvas>
+      </div>
+      <div class=\"chart-container\">
+        <div class=\"chart-title\">${this._t('devicesByCategory')}</div>
+        <canvas id=\"categoryChart\" width=\"400\" height=\"200\"></canvas>
+      </div>
     `;
   }
 
@@ -894,20 +978,20 @@ canvas {
         const percentage = Math.min((value / maxValue) * 100, 100);
 
         bandwidthHtml += `
-          <div class="bandwidth-bar">
-            <div class="bandwidth-label">${name}: ${value.toFixed(2)} ${unit}</div>
-            <div class="bandwidth-bar-bg">
-              <div class="bandwidth-bar-fill" style="width: ${percentage}%"></div>
+          <div class=\"bandwidth-bar\">
+            <div class=\"bandwidth-label\">${name}: ${value.toFixed(2)} ${unit}</div>
+            <div class=\"bandwidth-bar-bg\">
+              <div class=\"bandwidth-bar-fill\" style=\"width: ${percentage}%\"></div>
             </div>
           </div>
         `;
       }
     });
 
-    return bandwidthHtml || `<div class="empty-state" style="padding: 16px;">${this._t('noBandwidthSensors')}</div>`;
+    return bandwidthHtml || `<div class=\"empty-state\" style=\"padding: 16px;\">${this._t('noBandwidthSensors')}</div>`;
   }
 
-  drawNetworkMap(canvas) {
+  _drawNetworkMap(canvas) {
     this._fixCanvasSize(canvas);
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -919,13 +1003,15 @@ canvas {
     ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--card-background-color') || '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Router node - improved drawing
     ctx.fillStyle = '#4caf50';
     ctx.beginPath();
     ctx.arc(centerX, centerY, 15, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = '#333';
-    ctx.font = 'bold 12px sans-serif';
+    // Router label
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 11px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(this._t('router'), centerX, centerY);
@@ -946,42 +1032,163 @@ canvas {
       const x = centerX + Math.cos(angle) * dynamicRadius;
       const y = centerY + Math.sin(angle) * dynamicRadius;
 
-      // Connection line
+      // Connection line - improved
       const color = colorMap[device.status] || '#9e9e9e';
-      ctx.strokeStyle = color + '44';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = color + '55';
+      ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(centerX, centerY);
       ctx.lineTo(x, y);
       ctx.stroke();
 
-      // Device dot
+      // Device dot - improved
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(x, y, 8, 0, Math.PI * 2);
+      ctx.arc(x, y, 9, 0, Math.PI * 2);
       ctx.fill();
+
+      // Device dot border
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 9, 0, Math.PI * 2);
+      ctx.stroke();
 
       // Label (truncated)
       ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--primary-text-color') || '#333';
-      ctx.font = '10px sans-serif';
+      ctx.font = '11px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       const label = device.name.length > 12 ? device.name.substring(0, 10) + '…' : device.name;
-      ctx.fillText(label, x, y + 12);
+      ctx.fillText(label, x, y + 14);
 
       device.canvasX = x;
       device.canvasY = y;
-      device.canvasRadius = 8;
+      device.canvasRadius = 9;
     });
 
-    // Orbit circle
-    ctx.strokeStyle = (getComputedStyle(document.documentElement).getPropertyValue('--divider-color') || '#ddd') + '66';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
+    // Orbit circle - improved
+    ctx.strokeStyle = (getComputedStyle(document.documentElement).getPropertyValue('--divider-color') || '#ddd') + '88';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 5]);
     ctx.beginPath();
     ctx.arc(centerX, centerY, dynamicRadius, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+
+  _initializeCharts() {
+    if (!this.chartJsLoaded || !window.Chart) {
+      return;
+    }
+
+    // Destroy existing charts
+    Object.values(this.chartInstances).forEach(chart => {
+      if (chart && typeof chart.destroy === 'function') {
+        chart.destroy();
+      }
+    });
+    this.chartInstances = {};
+
+    const statusCounts = {
+      home: this.devices.filter(d => d.status === 'home').length,
+      zone: this.devices.filter(d => d.status === 'zone').length,
+      away: this.devices.filter(d => d.status === 'away').length,
+      unknown: this.devices.filter(d => d.status === 'unknown').length,
+      offline: this.devices.filter(d => d.status === 'offline').length
+    };
+
+    const statusCanvas = this.shadowRoot.querySelector('#statusChart');
+    if (statusCanvas) {
+      this.chartInstances.status = new Chart(statusCanvas, {
+        type: 'doughnut',
+        data: {
+          labels: ['Home', 'Zone', 'Away', 'Unknown', 'Offline'],
+          datasets: [{
+            data: [
+              statusCounts.home,
+              statusCounts.zone,
+              statusCounts.away,
+              statusCounts.unknown,
+              statusCounts.offline
+            ],
+            backgroundColor: [
+              '#4caf50',
+              '#2196f3',
+              '#ff9800',
+              '#9e9e9e',
+              '#f44336'
+            ],
+            borderColor: '#ffffff',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                usePointStyle: true,
+                padding: 15,
+                font: { size: 12 }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Category distribution
+    const categoryCounts = {};
+    this.devices.forEach(d => {
+      categoryCounts[d.category] = (categoryCounts[d.category] || 0) + 1;
+    });
+
+    const categoryCanvas = this.shadowRoot.querySelector('#categoryChart');
+    if (categoryCanvas) {
+      const categoryColors = {
+        'Phone': '#e91e63',
+        'Tablet': '#9c27b0',
+        'Computer': '#673ab7',
+        'Media': '#3f51b5',
+        'Smart Home': '#2196f3',
+        'Wearable': '#00bcd4',
+        'Other': '#009688'
+      };
+
+      this.chartInstances.category = new Chart(categoryCanvas, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(categoryCounts),
+          datasets: [{
+            label: 'Device Count',
+            data: Object.values(categoryCounts),
+            backgroundColor: Object.keys(categoryCounts).map(cat => categoryColors[cat] || '#757575'),
+            borderColor: '#ffffff',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              display: false
+            }
+          },
+          scales: {
+            x: {
+              beginAtZero: true,
+              ticks: { stepSize: 1 },
+              grid: { color: 'rgba(0,0,0,0.05)' }
+            }
+          }
+        }
+      });
+    }
   }
 
   attachEventListeners() {
@@ -990,6 +1197,17 @@ canvas {
       btn.addEventListener('click', (e) => {
         this.activeTab = e.target.dataset.tab;
         this.render();
+        if (this.activeTab === 'map') {
+          setTimeout(() => {
+            const canvas = this.shadowRoot.querySelector('#networkCanvas');
+            if (canvas) {
+              this._drawNetworkMap(canvas);
+              canvas.addEventListener('click', (evt) => this.handleCanvasClick(evt));
+            }
+          }, 0);
+        } else if (this.activeTab === 'stats') {
+          setTimeout(() => this._initializeCharts(), 100);
+        }
       });
     });
 
@@ -1029,10 +1247,12 @@ canvas {
       setTimeout(() => {
         const canvas = this.shadowRoot.querySelector('#networkCanvas');
         if (canvas) {
-          this.drawNetworkMap(canvas);
+          this._drawNetworkMap(canvas);
           canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
         }
       }, 0);
+    } else if (this.activeTab === 'stats') {
+      setTimeout(() => this._initializeCharts(), 100);
     }
   }
 
@@ -1064,57 +1284,57 @@ canvas {
     const statusLabel = device.status === 'zone' ? device.rawState : this._t(device.status);
     const extraRows = [];
     if (device.battery !== null) {
-      extraRows.push(`<div class="detail-row"><span class="detail-label">🔋 Battery:</span><span class="detail-value">${device.battery}%</span></div>`);
+      extraRows.push(`<div class=\"detail-row\"><span class=\"detail-label\">🔋 Battery:</span><span class=\"detail-value\">${device.battery}%</span></div>`);
     }
     if (device.sourceType && device.sourceType !== 'unknown') {
-      extraRows.push(`<div class="detail-row"><span class="detail-label">Source:</span><span class="detail-value">${device.sourceType}</span></div>`);
+      extraRows.push(`<div class=\"detail-row\"><span class=\"detail-label\">Source:</span><span class=\"detail-value\">${device.sourceType}</span></div>`);
     }
     if (device.ssid) {
-      extraRows.push(`<div class="detail-row"><span class="detail-label">📶 WiFi:</span><span class="detail-value">${device.ssid}</span></div>`);
+      extraRows.push(`<div class=\"detail-row\"><span class=\"detail-label\">📶 WiFi:</span><span class=\"detail-value\">${device.ssid}</span></div>`);
     }
     if (device.rssi !== null && device.rssi !== undefined) {
       const signal = device.rssi > -50 ? 'Excellent' : device.rssi > -60 ? 'Good' : device.rssi > -70 ? 'Fair' : 'Weak';
-      extraRows.push(`<div class="detail-row"><span class="detail-label">📡 Signal:</span><span class="detail-value">${device.rssi} dBm (${signal})</span></div>`);
+      extraRows.push(`<div class=\"detail-row\"><span class=\"detail-label\">📡 Signal:</span><span class=\"detail-value\">${device.rssi} dBm (${signal})</span></div>`);
     }
     if (device.connectionType) {
       const connIcon = device.connectionType === 'ethernet' ? '🔌' : '📶';
-      extraRows.push(`<div class="detail-row"><span class="detail-label">${connIcon} Connection:</span><span class="detail-value">${device.connectionType}</span></div>`);
+      extraRows.push(`<div class=\"detail-row\"><span class=\"detail-label\">${connIcon} Connection:</span><span class=\"detail-value\">${device.connectionType}</span></div>`);
     }
     if (device.speed) {
-      extraRows.push(`<div class="detail-row"><span class="detail-label">⚡ Speed:</span><span class="detail-value">${device.speed} Mbps</span></div>`);
+      extraRows.push(`<div class=\"detail-row\"><span class=\"detail-label\">⚡ Speed:</span><span class=\"detail-value\">${device.speed} Mbps</span></div>`);
     }
     if (device.uptime) {
-      extraRows.push(`<div class="detail-row"><span class="detail-label">⏱️ Uptime:</span><span class="detail-value">${device.uptime}</span></div>`);
+      extraRows.push(`<div class=\"detail-row\"><span class=\"detail-label\">⏱️ Uptime:</span><span class=\"detail-value\">${device.uptime}</span></div>`);
     }
     if (device.hasGps && device.gpsAccuracy) {
-      extraRows.push(`<div class="detail-row"><span class="detail-label">GPS Accuracy:</span><span class="detail-value">${device.gpsAccuracy}m</span></div>`);
+      extraRows.push(`<div class=\"detail-row\"><span class=\"detail-label\">GPS Accuracy:</span><span class=\"detail-value\">${device.gpsAccuracy}m</span></div>`);
     }
 
     detailDiv.innerHTML = `
-      <div class="device-detail">
-        <div class="detail-row">
-          <span class="detail-label">${this._t('deviceDetail')}</span>
-          <span class="detail-value">${device.icon} ${device.name}</span>
+      <div class=\"device-detail\">
+        <div class=\"detail-row\">
+          <span class=\"detail-label\">${this._t('deviceDetail')}</span>
+          <span class=\"detail-value\">${device.icon} ${device.name}</span>
         </div>
-        <div class="detail-row">
-          <span class="detail-label">${this._t('categoryDetail')}</span>
-          <span class="detail-value">${device.category}</span>
+        <div class=\"detail-row\">
+          <span class=\"detail-label\">${this._t('categoryDetail')}</span>
+          <span class=\"detail-value\">${device.category}</span>
         </div>
-        <div class="detail-row">
-          <span class="detail-label">${this._t('statusDetail')}</span>
-          <span class="detail-value">${statusLabel}</span>
+        <div class=\"detail-row\">
+          <span class=\"detail-label\">${this._t('statusDetail')}</span>
+          <span class=\"detail-value\">${statusLabel}</span>
         </div>
-        <div class="detail-row">
-          <span class="detail-label">${this._t('ipDetail')}</span>
-          <span class="detail-value">${ipDisplay}</span>
+        <div class=\"detail-row\">
+          <span class=\"detail-label\">${this._t('ipDetail')}</span>
+          <span class=\"detail-value\">${ipDisplay}</span>
         </div>
-        <div class="detail-row">
-          <span class="detail-label">${this._t('macDetail')}</span>
-          <span class="detail-value">${macDisplay}</span>
+        <div class=\"detail-row\">
+          <span class=\"detail-label\">${this._t('macDetail')}</span>
+          <span class=\"detail-value\">${macDisplay}</span>
         </div>
-        <div class="detail-row">
-          <span class="detail-label">${this._t('lastSeenDetail')}</span>
-          <span class="detail-value">${lastSeenDate}</span>
+        <div class=\"detail-row\">
+          <span class=\"detail-label\">${this._t('lastSeenDetail')}</span>
+          <span class=\"detail-value\">${lastSeenDate}</span>
         </div>
         ${extraRows.join('')}
       </div>
@@ -1136,7 +1356,6 @@ canvas {
     };
   }
 
-
   // --- Canvas size fix for Bento CSS ---
   _fixCanvasSize(canvas) {
     const rect = canvas.getBoundingClientRect();
@@ -1146,8 +1365,6 @@ canvas {
     }
   }
 
-
-
   // --- Pagination helper ---
   _renderPagination(tabName, totalItems) {
     if (!this._currentPage[tabName]) this._currentPage[tabName] = 1;
@@ -1156,12 +1373,12 @@ canvas {
     const page = Math.min(this._currentPage[tabName], totalPages);
     this._currentPage[tabName] = page;
     return `
-      <div class="pagination">
-        <button class="pagination-btn" data-page-tab="${tabName}" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>&#8249; Prev</button>
-        <span class="pagination-info">${page} / ${totalPages} (${totalItems})</span>
-        <button class="pagination-btn" data-page-tab="${tabName}" data-page="${page + 1}" ${page >= totalPages ? 'disabled' : ''}>Next &#8250;</button>
-        <select class="page-size-select" data-page-tab="${tabName}" data-action="page-size">
-          ${[10,15,25,50].map(s => `<option value="${s}" ${s === pageSize ? 'selected' : ''}>${s}/page</option>`).join('')}
+      <div class=\"pagination\">
+        <button class=\"pagination-btn\" data-page-tab=\"${tabName}\" data-page=\"${page - 1}\" ${page <= 1 ? 'disabled' : ''}>&#8249; Prev</button>
+        <span class=\"pagination-info\">${page} / ${totalPages} (${totalItems})</span>
+        <button class=\"pagination-btn\" data-page-tab=\"${tabName}\" data-page=\"${page + 1}\" ${page >= totalPages ? 'disabled' : ''}>Next &#8250;</button>
+        <select class=\"page-size-select\" data-page-tab=\"${tabName}\" data-action=\"page-size\">
+          ${[10,15,25,50].map(s => `<option value=\"${s}\" ${s === pageSize ? 'selected' : ''}>${s}/page</option>`).join('')}
         </select>
       </div>`;
   }
