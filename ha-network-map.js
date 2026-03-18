@@ -740,6 +740,24 @@ canvas {
           padding: 32px 16px;
           color: var(--text-secondary);
         }
+
+        /* RESPONSIVE */
+        @media (max-width: 768px) {
+          .device-list { grid-template-columns: 1fr !important; }
+          .topology-container { min-height: 300px; }
+          .detail-panel { width: 100% !important; position: relative !important; }
+          .header { flex-direction: column; gap: 8px; }
+          .filter-bar { flex-wrap: wrap; }
+          .filter-bar select, .filter-bar input { font-size: 12px; min-width: 0; }
+          table { font-size: 12px; }
+          td, th { padding: 6px 8px; word-break: break-all; }
+          .card { padding: 12px; }
+        }
+        @media (max-width: 480px) {
+          .device-list { gap: 8px; }
+          .tab { font-size: 11px; padding: 5px 8px; }
+          canvas { max-width: 100%; }
+        }
       </style>
     `;
 
