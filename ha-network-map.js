@@ -337,6 +337,7 @@ class HaNetworkMap extends HTMLElement {
   font-family: 'Inter', sans-serif !important;
   color: var(--bento-text) !important;
   overflow: hidden;
+  padding: 20px !important;
 }
 
 /* Headers */
