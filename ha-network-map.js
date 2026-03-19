@@ -61,32 +61,32 @@ class HaNetworkMap extends HTMLElement {
         listTab: 'Lista',
         mapTab: 'Mapa',
         statsTab: 'Statystyki',
-        searchPlaceholder: 'Szukaj urzÄ…dzeĹ„...',
-        deviceName: 'Nazwa urzÄ…dzenia',
+        searchPlaceholder: 'Szukaj urządzeń...',
+        deviceName: 'Nazwa urządzenia',
         category: 'Kategoria',
         status: 'Stan',
         ipAddress: 'Adres IP',
         macAddress: 'Adres MAC',
         lastSeen: 'Ostatnio widoczne',
-        noDevicesFound: 'Nie znaleziono urzÄ…dzeĹ„. Dodaj encje device_tracker do Home Assistant.',
+        noDevicesFound: 'Nie znaleziono urządzeń. Dodaj encje device_tracker do Home Assistant.',
         phone: 'Telefon',
         tablet: 'Tablet',
         computer: 'Komputer',
         media: 'Media',
         smartHome: 'Inteligentny dom',
-        wearable: 'UrzÄ…dzenie do noszenia',
+        wearable: 'Urządzenie do noszenia',
         other: 'Inne',
         home: 'W DOMU',
         away: 'POZA DOMEM',
         unknown: 'NIEZNANY',
-        offline: 'NIEDOSTÄPNY',
+        offline: 'NIEDOSTĘPNY',
         zone: 'STREFA',
-        totalDevices: 'Razem urzÄ…dzeĹ„',
+        totalDevices: 'Razem urządzeń',
         online: 'Online',
         offline: 'Offline',
         newToday: 'Nowe dzisiaj',
-        noBandwidthSensors: 'Nie znaleziono czujnikĂłw przepustowoĹ›ci.',
-        deviceDetail: 'UrzÄ…dzenie:',
+        noBandwidthSensors: 'Nie znaleziono czujników przepustowości.',
+        deviceDetail: 'Urządzenie:',
         categoryDetail: 'Kategoria:',
         statusDetail: 'Stan:',
         ipDetail: 'IP:',
@@ -269,7 +269,7 @@ class HaNetworkMap extends HTMLElement {
         sourceType: 'router',
         hostName: routerFriendlyName,
         lastSeen: new Date().toISOString(),
-        icon: 'đź“ˇ',
+        icon: '📡',
         category: 'Smart Home',
         battery: null,
         hasGps: false,
@@ -306,15 +306,15 @@ class HaNetworkMap extends HTMLElement {
   getCategoryIcon(name) {
     const category = this.categorizeDevice(name);
     const icons = {
-      'Phone': 'đź“±',
-      'Tablet': 'đź“˛',
-      'Computer': 'đź’»',
-      'Media': 'đź“ş',
-      'Smart Home': 'đźŹ ',
-      'Wearable': 'âŚš',
-      'Other': 'đź“ˇ'
+      'Phone': '📱',
+      'Tablet': '📲',
+      'Computer': '💻',
+      'Media': '📺',
+      'Smart Home': '🏠',
+      'Wearable': '⌚',
+      'Other': '📡'
     };
-    return icons[category] || 'đź“ˇ';
+    return icons[category] || '📡';
   }
 
   filterAndSort() {
@@ -380,6 +380,25 @@ class HaNetworkMap extends HTMLElement {
   --bento-shadow-lg: 0 8px 25px rgba(0,0,0,0.06), 0 4px 10px rgba(0,0,0,0.04);
   --bento-transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :host {
+    --bento-bg: #1a1a2e;
+    --bento-card: #16213e;
+    --bento-text: #e2e8f0;
+    --bento-text-secondary: #94a3b8;
+    --bento-border: #334155;
+    --bento-success: #34d399;
+    --bento-warning: #fbbf24;
+    --bento-error: #f87171;
+  }
+}
+:host-context([data-themes]) {
+  --bento-bg: var(--lovelace-background, var(--primary-background-color, #F8FAFC));
+  --bento-card: var(--card-background-color, var(--ha-card-background, #FFFFFF));
+  --bento-text: var(--primary-text-color, #1E293B);
+  --bento-text-secondary: var(--secondary-text-color, #64748B);
+  --bento-border: var(--divider-color, #E2E8F0);
 }
 
 /* Card */
@@ -871,8 +890,8 @@ canvas {
     }
 
     const rows = this.filteredDevices.map((device, idx) => {
-      const ipDisplay = device.ip || (device.hasGps ? 'đź“Ť GPS' : 'â€”');
-      const macDisplay = device.mac || (device.battery !== null ? `đź”‹ ${device.battery}%` : 'â€”');
+      const ipDisplay = device.ip || (device.hasGps ? '📍 GPS' : '—');
+      const macDisplay = device.mac || (device.battery !== null ? `🔋 ${device.battery}%` : '—');
       const statusLabel = device.status === 'zone' ? device.rawState : this._t(device.status);
       return `
       <tr data-device-id="${device.id}" data-index="${idx}">
@@ -1040,7 +1059,7 @@ canvas {
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      const label = device.name.length > 12 ? device.name.substring(0, 10) + 'â€¦' : device.name;
+      const label = device.name.length > 12 ? device.name.substring(0, 10) + '…' : device.name;
       ctx.fillText(label, x, y + 12);
 
       device.canvasX = x;
@@ -1133,32 +1152,32 @@ canvas {
   showDeviceDetail(device) {
     const detailDiv = this.shadowRoot.querySelector('#deviceDetail');
     const lastSeenDate = new Date(device.lastSeen).toLocaleString();
-    const ipDisplay = device.ip || (device.hasGps ? 'đź“Ť GPS tracker' : 'â€”');
-    const macDisplay = device.mac || 'â€”';
+    const ipDisplay = device.ip || (device.hasGps ? '📍 GPS tracker' : '—');
+    const macDisplay = device.mac || '—';
     const statusLabel = device.status === 'zone' ? device.rawState : this._t(device.status);
     const extraRows = [];
     if (device.battery !== null) {
-      extraRows.push(`<div class="detail-row"><span class="detail-label">đź”‹ Battery:</span><span class="detail-value">${device.battery}%</span></div>`);
+      extraRows.push(`<div class="detail-row"><span class="detail-label">🔋 Battery:</span><span class="detail-value">${device.battery}%</span></div>`);
     }
     if (device.sourceType && device.sourceType !== 'unknown') {
       extraRows.push(`<div class="detail-row"><span class="detail-label">Source:</span><span class="detail-value">${device.sourceType}</span></div>`);
     }
     if (device.ssid) {
-      extraRows.push(`<div class="detail-row"><span class="detail-label">đź“¶ WiFi:</span><span class="detail-value">${device.ssid}</span></div>`);
+      extraRows.push(`<div class="detail-row"><span class="detail-label">📶 WiFi:</span><span class="detail-value">${device.ssid}</span></div>`);
     }
     if (device.rssi !== null && device.rssi !== undefined) {
       const signal = device.rssi > -50 ? 'Excellent' : device.rssi > -60 ? 'Good' : device.rssi > -70 ? 'Fair' : 'Weak';
-      extraRows.push(`<div class="detail-row"><span class="detail-label">đź“ˇ Signal:</span><span class="detail-value">${device.rssi} dBm (${signal})</span></div>`);
+      extraRows.push(`<div class="detail-row"><span class="detail-label">📡 Signal:</span><span class="detail-value">${device.rssi} dBm (${signal})</span></div>`);
     }
     if (device.connectionType) {
-      const connIcon = device.connectionType === 'ethernet' ? 'đź”Ś' : 'đź“¶';
+      const connIcon = device.connectionType === 'ethernet' ? '🔌' : '📶';
       extraRows.push(`<div class="detail-row"><span class="detail-label">${connIcon} Connection:</span><span class="detail-value">${device.connectionType}</span></div>`);
     }
     if (device.speed) {
-      extraRows.push(`<div class="detail-row"><span class="detail-label">âšˇ Speed:</span><span class="detail-value">${device.speed} Mbps</span></div>`);
+      extraRows.push(`<div class="detail-row"><span class="detail-label">⚡ Speed:</span><span class="detail-value">${device.speed} Mbps</span></div>`);
     }
     if (device.uptime) {
-      extraRows.push(`<div class="detail-row"><span class="detail-label">âŹ±ď¸Ź Uptime:</span><span class="detail-value">${device.uptime}</span></div>`);
+      extraRows.push(`<div class="detail-row"><span class="detail-label">⏱️ Uptime:</span><span class="detail-value">${device.uptime}</span></div>`);
     }
     if (device.hasGps && device.gpsAccuracy) {
       extraRows.push(`<div class="detail-row"><span class="detail-label">GPS Accuracy:</span><span class="detail-value">${device.gpsAccuracy}m</span></div>`);
