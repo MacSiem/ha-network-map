@@ -183,8 +183,8 @@ class HaNetworkMap extends HTMLElement {
           sourceType: attr.source_type || 'unknown',
           hostName: attr.host_name || friendlyName,
           lastSeen: state.last_changed || state.last_updated || new Date().toISOString(),
-          icon: this.getCategoryIcon(friendlyName),
-          category: this.categorizeDevice(friendlyName),
+          icon: this.getCategoryIcon(friendlyName, attr),
+          category: this.categorizeDevice(friendlyName, attr),
           battery: battery,
           hasGps: hasGps,
           gpsAccuracy: attr.gps_accuracy || null,
@@ -231,8 +231,8 @@ class HaNetworkMap extends HTMLElement {
               sourceType: 'sensor',
               hostName: friendlyName,
               lastSeen: state.last_changed || state.last_updated || new Date().toISOString(),
-              icon: this.getCategoryIcon(friendlyName),
-              category: this.categorizeDevice(friendlyName),
+              icon: this.getCategoryIcon(friendlyName, attr),
+              category: this.categorizeDevice(friendlyName, attr),
               battery: null,
               hasGps: false,
               gpsAccuracy: null,
@@ -292,29 +292,38 @@ class HaNetworkMap extends HTMLElement {
     this.filterAndSort();
   }
 
-  categorizeDevice(name) {
+  categorizeDevice(name, attributes) {
     const lower = name.toLowerCase();
-    if (/phone|iphone|android|mobile/.test(lower)) return 'Phone';
-    if (/tablet|ipad/.test(lower)) return 'Tablet';
-    if (/computer|laptop|pc|mac|desktop/.test(lower)) return 'Computer';
-    if (/tv|media|kodi|plex/.test(lower)) return 'Media';
-    if (/switch|light|sensor|camera|doorbell/.test(lower)) return 'Smart Home';
-    if (/watch|wearable|band/.test(lower)) return 'Wearable';
+    const model = ((attributes && attributes.model) || '').toLowerCase();
+    const manufacturer = ((attributes && attributes.manufacturer) || '').toLowerCase();
+    const sourceType = ((attributes && attributes.source_type) || '').toLowerCase();
+    const all = lower + ' ' + model + ' ' + manufacturer;
+    if (/phone|iphone|android|mobile|pixel|galaxy|oneplus|xiaomi|huawei|oppo|redmi/.test(all)) return 'Phone';
+    if (/tablet|ipad/.test(all)) return 'Tablet';
+    if (/computer|laptop|pc|mac|desktop|thinkpad|macbook|imac|surface|dell|lenovo|hp |asus/.test(all)) return 'Computer';
+    if (/raspberry|pi|rpi|server|nas|synology|qnap/.test(all)) return 'Server';
+    if (/tv|media|kodi|plex|chromecast|roku|fire.?stick|apple.?tv|shield|sonos|samsung.*tv|lg.*tv/.test(all)) return 'Media';
+    if (/printer|brother|canon|epson|hp.?print/.test(all)) return 'Printer';
+    if (/camera|doorbell|ring|nest|reolink|frigate|hikvision|dahua/.test(all)) return 'Camera';
+    if (/router|gateway|access.?point|ap |mesh|wifi|ubiquiti|unifi|mikrotik|tp.?link|fritz/.test(all)) return 'Router';
+    if (/switch|plug|socket|relay|shelly|sonoff|tasmota|zigbee|zwave|esp32|esp8266|tuya|ikea/.test(all)) return 'Smart Home';
+    if (/light|bulb|lamp|hue|tradfri|yeelight|wled/.test(all)) return 'Smart Home';
+    if (/sensor|motion|temperature|humidity|thermostat|climate/.test(all)) return 'Smart Home';
+    if (/watch|wearable|band|fitbit|garmin/.test(all)) return 'Wearable';
+    if (/vacuum|roborock|dreame|roomba|robot/.test(all)) return 'Smart Home';
+    if (sourceType === 'router' || sourceType === 'bluetooth_le') return 'Smart Home';
     return 'Other';
   }
 
-  getCategoryIcon(name) {
-    const category = this.categorizeDevice(name);
+  getCategoryIcon(name, attributes) {
+    const category = this.categorizeDevice(name, attributes);
     const icons = {
-      'Phone': '📱',
-      'Tablet': '📲',
-      'Computer': '💻',
-      'Media': '📺',
-      'Smart Home': '🏠',
-      'Wearable': '⌚',
-      'Other': '📡'
+      'Phone': '\u{1F4F1}', 'Tablet': '\u{1F4F2}', 'Computer': '\u{1F4BB}',
+      'Server': '\u{1F5A5}\uFE0F', 'Media': '\u{1F4FA}', 'Printer': '\u{1F5A8}\uFE0F',
+      'Camera': '\u{1F4F7}', 'Router': '\u{1F4E1}', 'Smart Home': '\u{1F3E0}',
+      'Wearable': '\u231A', 'Other': '\u{1F4E1}'
     };
-    return icons[category] || '📡';
+    return icons[category] || '\u{1F4E1}';
   }
 
   filterAndSort() {
@@ -380,25 +389,6 @@ class HaNetworkMap extends HTMLElement {
   --bento-shadow-lg: 0 8px 25px rgba(0,0,0,0.06), 0 4px 10px rgba(0,0,0,0.04);
   --bento-transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-}
-@media (prefers-color-scheme: dark) {
-  :host {
-    --bento-bg: #1a1a2e;
-    --bento-card: #16213e;
-    --bento-text: #e2e8f0;
-    --bento-text-secondary: #94a3b8;
-    --bento-border: #334155;
-    --bento-success: #34d399;
-    --bento-warning: #fbbf24;
-    --bento-error: #f87171;
-  }
-}
-:host-context([data-themes]) {
-  --bento-bg: var(--lovelace-background, var(--primary-background-color, #F8FAFC));
-  --bento-card: var(--card-background-color, var(--ha-card-background, #FFFFFF));
-  --bento-text: var(--primary-text-color, #1E293B);
-  --bento-text-secondary: var(--secondary-text-color, #64748B);
-  --bento-border: var(--divider-color, #E2E8F0);
 }
 
 /* Card */
@@ -1059,7 +1049,7 @@ canvas {
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      const label = device.name.length > 12 ? device.name.substring(0, 10) + '…' : device.name;
+      const label = device.name.length > 22 ? device.name.substring(0, 20) + '\u2026' : device.name;
       ctx.fillText(label, x, y + 12);
 
       device.canvasX = x;
