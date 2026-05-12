@@ -1,5 +1,7 @@
 {
-    "name":  "Network Map",
-    "filename":  "ha-network-map.js",
-    "render_readme":  true
+  "name": "Network Map",
+  "filename": "ha-network-map.js",
+  "render_readme": true,
+  "content_in_root": true,
+  "homeassistant": "2024.1.0"
 }
