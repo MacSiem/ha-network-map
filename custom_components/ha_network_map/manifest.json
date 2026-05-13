@@ -1,0 +1,13 @@
+{
+  "domain": "ha_network_map",
+  "name": "Network Map",
+  "codeowners": ["@MacSiem"],
+  "config_flow": true,
+  "dependencies": ["frontend", "http", "websocket_api"],
+  "documentation": "https://github.com/MacSiem/ha-network-map",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/MacSiem/ha-network-map/issues",
+  "requirements": [],
+  "version": "5.0.0"
+}

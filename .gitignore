@@ -1,21 +1,13 @@
-# OS
+__pycache__/
+*.pyc
+*.pyo
 .DS_Store
-Thumbs.db
 *.swp
-*~
-
-# Editor
-.idea/
-.vscode/
-*.iml
-
-# Build / scratch
-node_modules/
-dist/
-build/
-*.log
-*.tmp
-
-# Local
+.venv/
 .env
 .env.local
+.idea/
+.vscode/
+node_modules/
+_smoke_test.py
+deploy_v5.sh

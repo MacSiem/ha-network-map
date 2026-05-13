@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Network Map",
+        "description": "Spowoduje to zarejestrowanie integracji Network Map. Urządzenia są pobierane z istniejącego rejestru Home Assistant oraz stanu device_tracker. Skanowanie dostępności działa po stronie hosta Home Assistant."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Dozwolona jest tylko jedna instancja tej integracji."
+    }
+  }
+}
