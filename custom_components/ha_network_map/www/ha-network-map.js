@@ -807,13 +807,11 @@ class HaNetworkMap extends HTMLElement {
 
     if (!this._firstHassRender) {
       this._firstHassRender = true;
-      this._loadSubnets();
+      // v5: no client-side subnet config / cached scan results. The
+      // bundled Python integration owns the canonical device list and
+      // reachability data; we just pull it once on first hass connect.
       this._loadBindings();
-      this._loadCachedScanResults();
-      this._loadDeviceRegistry().then(() => {
-        // Privacy: auto-scan disabled — initialize subnets only.
-        // Network scan (1016+ port requests) requires explicit user action via "Scan All" button.
-        this._initSubnetsOnly();
+      this._loadDeviceRegistry().then(() => this._reloadFromApi()).then(() => {
         this._doRender();
       });
       return;
@@ -926,91 +924,82 @@ class HaNetworkMap extends HTMLElement {
   }
 
   async _scanAllSubnets() {
+    // v5: delegate to the bundled Python integration's server-side scan.
+    // The previous browser-side path (per-IP fetch() HEAD probes against
+    // [80, 443, 8080, 8123]) was rejected by the HACS reviewer for three
+    // reasons: 1) it claimed "no external network calls" in the README
+    // while in fact firing real outbound HTTP requests; 2) it probed
+    // whatever LAN the user's browser happened to be on, not the home
+    // LAN (Nabu Casa Cloud, mobile data, coffee-shop WiFi); 3) the port
+    // list was HTTP-only and missed ESPHome / MQTT / RTSP / SSH / IPP.
+    //
+    // The Python integration handles all three: probes run from the HA
+    // host (always the home LAN), use a smart-home port set, and skip
+    // public IPs by default.
     if (this._scanInProgress) return;
-    this._scanInProgress = true;
-    this._scanResults = {};
-
-    try {
-      for (const subnet of this._subnets) {
-        await this._scanSubnet(subnet);
-      }
-    } catch (e) {
-      console.warn('[ha-network-map] scan error:', e);
+    if (!this._hass) {
+      this._scanError = this._integrationMissingHint();
+      this._doRender();
+      return;
     }
-
-    this._lastScanTime = Date.now();
-    this._persistScanResults();
-    this._buildDeviceList();
-    this._scanInProgress = false;
+    this._scanInProgress = true;
+    this._scanError = null;
     this._scanProgress = { current: 0, total: 0 };
     this._doRender();
-  }
 
-  async _scanSubnet(subnet) {
-    const ips = [];
-    for (let i = 1; i <= 254; i++) {
-      ips.push(subnet + '.' + i);
-    }
-
-    // Batch scan with timeout
-    const batchSize = 40;
-    const timeout = 2000;
-    const ports = [80, 443, 8080, 8123];
-
-    for (let b = 0; b < ips.length; b += batchSize) {
-      const batch = ips.slice(b, b + batchSize);
-      const promises = batch.map(ip =>
-        Promise.race([
-          this._pingIp(ip, ports),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), timeout))
-        ]).catch(() => false)
-      );
-
-      const results = await Promise.all(promises);
-      results.forEach((reachable, idx) => {
-        this._scanResults[batch[idx]] = reachable;
-        this._scanProgress.current++;
-        this._scanProgress.total = ips.length;
-        this._doRender();
-      });
-    }
-  }
-
-  async _pingIp(ip, ports) {
-    // Try to fetch from multiple ports to detect reachability
-    for (const port of ports) {
-      try {
-        const ctrl = new AbortController();
-        const timeoutId = setTimeout(() => ctrl.abort(), 500);
-        const res = await fetch('http://' + ip + ':' + port + '/', {
-          method: 'HEAD',
-          signal: ctrl.signal,
-          mode: 'no-cors'
-        });
-        clearTimeout(timeoutId);
-        return true;
-      } catch (e) { console.debug('[ha-network-map] caught:', e); }
-    }
-    return false;
-  }
-
-  _persistScanResults() {
     try {
-      const data = { results: this._scanResults, time: this._lastScanTime };
-      localStorage.setItem('ha-tools-net-scan', JSON.stringify(data));
-    } catch (e) { console.debug('[ha-network-map] caught:', e); }
+      const status = await this._hass.callWS({ type: 'ha_network_map/scan' });
+      this._lastScanStatus = status || {};
+      this._lastScanTime = (status && status.last_scan_finished_at)
+        ? Math.floor(status.last_scan_finished_at * 1000)
+        : Date.now();
+      await this._reloadFromApi();
+    } catch (e) {
+      console.warn('[ha-network-map] scan failed:', e);
+      this._scanError = (e && e.message) ? e.message : this._integrationMissingHint();
+    } finally {
+      this._scanInProgress = false;
+      this._scanProgress = { current: 0, total: 0 };
+      this._doRender();
+    }
   }
-  _loadCachedScanResults() {
+
+  async _reloadFromApi() {
+    // Pull the canonical device list from the integration. Translates
+    // the integration's shape ({devices: [{ip, reachable, open_ports,
+    // ...}]}) into the legacy `_scanResults[ip] = bool` map so the
+    // existing renderer stays untouched, and stores the full row under
+    // `_integrationDevices` for the richer info the renderer can use.
+    if (!this._hass) return;
     try {
-      const stored = localStorage.getItem('ha-tools-net-scan');
-      if (!stored) return;
-      const data = JSON.parse(stored);
-      if (data && Array.isArray(data.results)) {
-        this._scanResults = data.results;
-        this._lastScanTime = data.time || 0;
+      const res = await this._hass.callWS({ type: 'ha_network_map/list_devices' });
+      const list = (res && res.devices) || [];
+      this._integrationDevices = list;
+      const reachMap = {};
+      for (const d of list) {
+        if (d && d.ip) reachMap[d.ip] = d.reachable === true;
       }
-    } catch (e) { console.debug('[ha-network-map] caught:', e); }
+      this._scanResults = reachMap;
+      this._buildDeviceList();
+    } catch (e) {
+      console.warn('[ha-network-map] list_devices failed:', e);
+      this._scanError = this._integrationMissingHint();
+    }
   }
+
+  _integrationMissingHint() {
+    return (this._lang === 'pl')
+      ? 'Brak integracji ha_network_map. Zainstaluj ją z HACS i dodaj w Ustawieniach → Urządzenia i usługi.'
+      : 'The ha_network_map integration is missing. Install it from HACS and add it under Settings → Devices & services.';
+  }
+
+  // v5: the v4 browser-side _scanSubnet/_pingIp/_persistScanResults path
+  // is gone — see comment on _scanAllSubnets above. These stubs only
+  // exist so any caller that wasn't migrated never blows up.
+  async _scanSubnet() { return; }
+  async _pingIp() { return false; }
+  _persistScanResults() { /* no-op in v5 */ }
+  _loadCachedScanResults() { /* no-op in v5 */ }
 
   _cat(name, attr) {
     const a = (name + ' ' + ((attr && attr.model) || '') + ' ' + ((attr && attr.manufacturer) || '')).toLowerCase();
@@ -1077,19 +1066,41 @@ class HaNetworkMap extends HTMLElement {
       });
     }
 
-    // Add discovered devices from scan not in HA
-    Object.entries(this._scanResults).forEach(([ip, reachable]) => {
-      if (reachable && !seen.has(ip)) {
-        seen.add(ip);
+    // v5: merge in the rest of the device map from the bundled Python
+    // integration. The v4 path only iterated `device_tracker.*`, which
+    // was the HACS reviewer's third concern — the vast majority of an
+    // HA install's devices (Bluetooth, Zigbee, Z-Wave, MQTT, ESPHome,
+    // most cloud integrations) never appear in `device_tracker.*`.
+    // The integration reads the full device registry server-side and
+    // joins reachability state from its own ICMP/TCP scan.
+    if (Array.isArray(this._integrationDevices)) {
+      for (const d of this._integrationDevices) {
+        if (!d) continue;
+        const dedupeKey = d.ip || d.mac || d.key;
+        if (!dedupeKey || seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        if (d.ip) seen.add(d.ip);
+        const name = d.name || d.ip || d.mac || 'Unknown';
         this.devices.push({
-          ip, mac: null, manufacturer: null, model: null, name: ip,
-          category: this._lang === 'pl' ? 'Odkryte' : 'Discovered',
-          icon: '📡', reachable: true, entity_id: null,
+          ip: d.ip || null,
+          mac: d.mac || null,
+          manufacturer: d.manufacturer || null,
+          model: d.model || null,
+          name,
+          category: this._cat(name, { manufacturer: d.manufacturer, model: d.model }),
+          icon: this._icon(name, { manufacturer: d.manufacturer, model: d.model }),
+          reachable: (d.reachable === true) ? true : (d.reachable === false ? false : null),
+          entity_id: (d.entity_ids && d.entity_ids[0]) || null,
+          entity_ids: d.entity_ids || [],
+          state: null,
+          source_type: null,
+          sources: d.sources || [],
+          open_ports: d.open_ports || [],
           lastSeen: new Date().toISOString(),
-          binding: this._bindings[ip] || null
+          binding: this._bindings[dedupeKey] || null
         });
       }
-    });
+    }
 
     this._filterSort();
   }

@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Network Map",
+        "description": "This will register the Network Map integration. Devices are pulled from Home Assistant's existing registry and device_tracker state. The reachability scan runs server-side from the Home Assistant host."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only a single instance of this integration is allowed."
+    }
+  }
+}

@@ -1,0 +1,50 @@
+scan:
+  name: Scan network
+  description: >-
+    Probe TCP reachability for every Home-Assistant-known device with an
+    IP, from the Home Assistant host itself. Only private addresses
+    (RFC1918 / loopback / link-local) are probed unless include_public_ips
+    is enabled. Probes are throttled by max_concurrent and skipped when a
+    scan is already in progress.
+  fields:
+    ports:
+      name: Ports
+      description: >-
+        Optional list of TCP ports to probe per device. Defaults to a
+        smart-home-friendly set (80, 443, 8123, 6053, 1883, 8883, 554,
+        22, 631).
+      example: "[80, 443, 8123]"
+      selector:
+        object:
+    timeout:
+      name: Timeout (seconds)
+      description: Per-port connect timeout.
+      default: 0.7
+      example: 0.7
+      selector:
+        number:
+          min: 0.05
+          max: 5.0
+          step: 0.05
+          mode: slider
+          unit_of_measurement: s
+    max_concurrent:
+      name: Max concurrent probes
+      description: Upper bound on in-flight TCP connect attempts.
+      default: 16
+      example: 16
+      selector:
+        number:
+          min: 1
+          max: 64
+          step: 1
+          mode: box
+    include_public_ips:
+      name: Include public IPs
+      description: >-
+        Allow probing addresses outside RFC1918. Off by default — leave
+        off unless you understand the implications.
+      default: false
+      example: false
+      selector:
+        boolean:
