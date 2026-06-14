@@ -82,8 +82,7 @@ if (typeof window !== 'undefined' && !window.HAToolsBentoCSS) {
 }
 
 /* ── Dark mode ───────────────────────────────── */
-@media (prefers-color-scheme: dark) {
-  :host {
+:host(.bento-dark) {
     --bento-bg:     var(--primary-background-color, #0a0a0f);
     --bento-bg-2:   var(--card-background-color,    #111119);
     --bento-card:   var(--card-background-color,    #16161f);
@@ -118,14 +117,13 @@ if (typeof window !== 'undefined' && !window.HAToolsBentoCSS) {
     --bento-grad-rainbow: linear-gradient(135deg, #818cf8, #a78bfa 50%, #f472b6);
     color-scheme: dark !important;
   }
-  .card, .card-container, .main-card, .panel-card {
+:host(.bento-dark) .card, :host(.bento-dark) .card-container, :host(.bento-dark) .main-card, :host(.bento-dark) .panel-card {
     background: var(--bento-card) !important; color: var(--bento-text) !important; border-color: var(--bento-border) !important;
   }
-  input, select, textarea { background: var(--bento-bg-2); color: var(--bento-text); border-color: var(--bento-border); }
-  table th { background: var(--bento-bg-2); color: var(--bento-text-secondary); border-color: var(--bento-border); }
-  table td { color: var(--bento-text); border-color: var(--bento-border); }
-  pre, code { background: #1e1e2e !important; color: #e2e8f0 !important; }
-}
+:host(.bento-dark) input, :host(.bento-dark) select, :host(.bento-dark) textarea { background: var(--bento-bg-2); color: var(--bento-text); border-color: var(--bento-border); }
+:host(.bento-dark) table th { background: var(--bento-bg-2); color: var(--bento-text-secondary); border-color: var(--bento-border); }
+:host(.bento-dark) table td { color: var(--bento-text); border-color: var(--bento-border); }
+:host(.bento-dark) pre, :host(.bento-dark) code { background: #1e1e2e !important; color: #e2e8f0 !important; }
 
 /* ── Reset & motion preferences ──────────────── */
 * { box-sizing: border-box; }
@@ -801,6 +799,17 @@ class HaNetworkMap extends HTMLElement {
   }
 
   set hass(hass) {
+    try {
+      var _bg = (getComputedStyle(this).getPropertyValue('--card-background-color') || getComputedStyle(this).getPropertyValue('--primary-background-color') || '').trim();
+      var _d = false;
+      if (_bg) {
+        var _h, _r, _g, _b, _m;
+        if (_bg.charAt(0) === '#') { _h = _bg.slice(1); if (_h.length === 3) _h = _h.replace(/(.)/g, '$1$1'); _r = parseInt(_h.slice(0,2),16); _g = parseInt(_h.slice(2,4),16); _b = parseInt(_h.slice(4,6),16); }
+        else { _m = _bg.match(/[\d.]+/g); if (_m) { _r = +_m[0]; _g = +_m[1]; _b = +_m[2]; } }
+        if (_r != null) _d = (0.2126*_r + 0.7152*_g + 0.0722*_b) / 255 < 0.5;
+      } else if (hass && hass.themes) { _d = !!hass.themes.darkMode; }
+      this.classList.toggle('bento-dark', _d);
+    } catch (e) {}
     if (!hass) return;
     if (hass?.language) this._lang = hass.language.startsWith('pl') ? 'pl' : 'en';
     this._hass = hass;
@@ -1636,7 +1645,7 @@ class HaNetworkMap extends HTMLElement {
     'font-family: Inter, -apple-system, sans-serif; }' +
     '.card { background: var(--bento-card); border: 1px solid var(--bento-border); ' +
 
-    '@media (prefers-color-scheme: dark) { :host { --bento-bg: var(--primary-background-color, #1a1a2e); --bento-card: var(--card-background-color, #16213e); --bento-text: var(--primary-text-color, #e2e8f0); --bento-text-secondary: var(--secondary-text-color, #94a3b8); --bento-border: var(--divider-color, #334155); --bento-shadow-sm: 0 1px 3px rgba(0,0,0,0.3); } }' +    'border-radius: var(--bento-radius-md); box-shadow: var(--bento-shadow-sm); ' +
+    ':host(.bento-dark) { --bento-bg: var(--primary-background-color, #1a1a2e); --bento-card: var(--card-background-color, #16213e); --bento-text: var(--primary-text-color, #e2e8f0); --bento-text-secondary: var(--secondary-text-color, #94a3b8); --bento-border: var(--divider-color, #334155); --bento-shadow-sm: 0 1px 3px rgba(0,0,0,0.3); }' +    'border-radius: var(--bento-radius-md); box-shadow: var(--bento-shadow-sm); ' +
     'padding: 20px; color: var(--bento-text); position: relative; }' +
     '.card-header-wrapper { border-bottom: 1px solid var(--bento-border); ' +
     'padding-bottom: 12px; margin-bottom: 16px; }' +
