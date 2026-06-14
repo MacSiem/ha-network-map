@@ -170,11 +170,23 @@ class NetworkScanner:
 
             async def _probe(key: str, ip: str) -> None:
                 open_ports: list[int] = []
+                host_up = False
                 for port in ports_tuple:
                     async with sem:
-                        if await self._tcp_check(ip, port, timeout):
-                            open_ports.append(port)
-                self._devices[key].reachable = bool(open_ports)
+                        status = await self._tcp_status(ip, port, timeout)
+                    if status == "open":
+                        open_ports.append(port)
+                        host_up = True
+                    elif status == "refused":
+                        host_up = True
+                # Reachable if the host answered on ANY port — "open" OR
+                # "refused". Online devices that expose none of the scanned
+                # ports (most IoT, Modbus, printers, etc.) actively refuse the
+                # connection, which still proves the host is up. Only a total
+                # no-response (timeout/unreachable on every port) counts as
+                # unreachable, so we no longer flag live devices red just for
+                # lacking a scannable open port.
+                self._devices[key].reachable = host_up
                 self._devices[key].open_ports = open_ports
 
             await asyncio.gather(*(_probe(k, ip) for k, ip in targets))
@@ -315,3 +327,27 @@ class NetworkScanner:
         except Exception:  # pragma: no cover - defensive
             pass
         return True
+
+    @staticmethod
+    async def _tcp_status(ip: str, port: int, timeout: float) -> str:
+        """Probe one TCP port, distinguishing host-up from host-down.
+
+        Returns ``"open"`` (port accepts connections), ``"refused"`` (the host
+        actively refused — it is up but the port is closed) or ``"down"`` (no
+        response within the timeout, i.e. host unreachable/filtered). The
+        refused vs down distinction is what lets the scanner mark live devices
+        with no scannable open port as reachable instead of unreachable.
+        """
+        try:
+            fut = asyncio.open_connection(ip, port)
+            reader, writer = await asyncio.wait_for(fut, timeout=timeout)
+        except ConnectionRefusedError:
+            return "refused"
+        except (asyncio.TimeoutError, OSError):
+            return "down"
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception:  # pragma: no cover - defensive
+            pass
+        return "open"

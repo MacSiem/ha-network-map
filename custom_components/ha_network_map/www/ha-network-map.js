@@ -817,6 +817,11 @@ class HaNetworkMap extends HTMLElement {
       return;
     }
 
+    // Skip DOM rebuilds while the user is typing in a field. A full re-render
+    // on every hass update drops focus + wipes unbound inputs (the "one char at
+    // a time" report on networks with many devices). Resume after blur.
+    if (this._isEditing()) return;
+
     const now = Date.now();
     if (now - (this._lastRenderTime || 0) < 5000) {
       if (!this._renderScheduled) {
@@ -824,6 +829,7 @@ class HaNetworkMap extends HTMLElement {
         this._renderTimer = setTimeout(() => {
           this._renderTimer = null;
           this._renderScheduled = false;
+          if (this._isEditing()) return;
           this._buildDeviceList();
           this._doRender();
           this._lastRenderTime = Date.now();
@@ -1141,7 +1147,18 @@ class HaNetworkMap extends HTMLElement {
     });
 
     this.filteredDevices = f;
-    this._currentPage = 1;
+    // Do NOT reset the page here. _filterSort() runs on every hass-driven
+    // rebuild, so resetting would snap the table back to page 1 ~every second
+    // on busy networks. Page reset lives in the search/filter/sort handlers.
+    const _tp = Math.max(1, Math.ceil(f.length / this._pageSize));
+    if (this._currentPage > _tp) this._currentPage = _tp;
+  }
+
+  _isEditing() {
+    const ae = this.shadowRoot && this.shadowRoot.activeElement;
+    if (!ae) return false;
+    const t = (ae.tagName || '').toUpperCase();
+    return t === 'INPUT' || t === 'TEXTAREA';
   }
 
   _doRender() {
@@ -1178,9 +1195,20 @@ class HaNetworkMap extends HTMLElement {
       '</div>';
 
     if (this._lastHtml === html) return;
+    // Preserve focus + caret across the full innerHTML rebuild so typing in an
+    // input (search / subnet / config) survives data-driven re-renders instead
+    // of dropping a character per refresh.
+    const _ae = this.shadowRoot.activeElement;
+    const _fid = _ae && _ae.id;
+    let _ss = null, _se = null;
+    try { if (_ae) { _ss = _ae.selectionStart; _se = _ae.selectionEnd; } } catch (e) {}
     this._lastHtml = html;
     this.shadowRoot.innerHTML = html;
     this._bindEvents();
+    if (_fid) {
+      const _el = this.shadowRoot.getElementById(_fid);
+      if (_el) { try { _el.focus(); if (_ss != null && _el.setSelectionRange) _el.setSelectionRange(_ss, _se); } catch (e) {} }
+    }
   }
 
   _renderScanOverlay() {
@@ -1441,6 +1469,7 @@ class HaNetworkMap extends HTMLElement {
     if (sI) {
       sI.addEventListener('input', (e) => {
         this.searchQuery = e.target.value;
+        this._currentPage = 1;
         this._filterSort();
         this._doRender();
       });
@@ -1450,6 +1479,7 @@ class HaNetworkMap extends HTMLElement {
     if (cF) {
       cF.addEventListener('change', (e) => {
         this._catFilter = e.target.value === 'all' ? null : e.target.value;
+        this._currentPage = 1;
         this._filterSort();
         this._doRender();
       });
@@ -1460,6 +1490,7 @@ class HaNetworkMap extends HTMLElement {
         const s = th.dataset.s;
         if (this.sortBy === s) this.sortDesc = !this.sortDesc;
         else { this.sortBy = s; this.sortDesc = false; }
+        this._currentPage = 1;
         this._filterSort();
         this._doRender();
       });

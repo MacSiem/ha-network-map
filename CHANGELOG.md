@@ -1,5 +1,19 @@
 # Changelog
 
+## 5.0.2 — 2026-06-13
+
+### Fixed
+- **Reachability no longer flags live devices as "unreachable" just because they expose no scanned port.** A refused TCP connection now counts as "host up" (only a total no-response/timeout on every port means unreachable), so most online IoT / Modbus / printer devices show reachable. Devices with no IP (Zigbee, Z-Wave, serial Modbus, etc.) stay "—" (not IP-scannable), never red.
+- **Card no longer drops input focus or resets the device list to page 1 on every refresh.** A full re-render on each `hass` update (very frequent on large networks) was wiping the focused field ("one character at a time" when typing an IP/subnet) and snapping pagination back to page 1 every second. The card now preserves focus + caret across re-renders, defers rebuilding while you are typing, and only resets the page on an explicit search/filter/sort change.
+
+## 5.0.1 — 2026-06-13
+
+### Added
+- `getGridOptions()` for correct sizing in Home Assistant's sections (grid) dashboard layout.
+
+### Fixed
+- Clear the pending render-debounce timer in `disconnectedCallback`.
+
 ## 5.0.0 — 2026-05-14
 
 **Breaking architectural rewrite.** The card no longer scans the network from the browser. Reachability is now probed by a bundled Python integration that runs from the Home Assistant host itself, so probes always target the home LAN regardless of how the dashboard is being accessed.
