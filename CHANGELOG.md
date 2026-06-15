@@ -1,5 +1,10 @@
 # Changelog
 
+## [5.0.5] - 2026-06-15
+
+- Theme: dark/light now follows the active Home Assistant theme (luminance of --card-background-color) instead of OS prefers-color-scheme.
+
+
 ## [5.0.4] - 2026-06-15
 
 - Theme: dark/light now follows the active Home Assistant theme (luminance of --card-background-color) instead of OS prefers-color-scheme.
