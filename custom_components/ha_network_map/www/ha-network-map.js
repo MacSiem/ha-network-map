@@ -1,4 +1,4 @@
-/* HA Tools split — ha-network-map v5.0.5 (2026-05-12) — single-tool standalone repo */
+/* HA Tools split — ha-network-map v5.0.6 (2026-05-12) — single-tool standalone repo */
 (function() {
 'use strict';
 
@@ -1322,50 +1322,225 @@ class HaNetworkMap extends HTMLElement {
   }
 
   _renderTopologyTab() {
+    // ── Empty state ──────────────────────────────────────────────────────────
     if (!this.devices.length) {
-      return '<div class="es">' + this._t('noDevicesFound') + '</div>';
+      return '<div class="es" style="padding:60px 20px;">' +
+        '<div style="font-size:40px;margin-bottom:12px;">🔍</div>' +
+        '<div style="font-weight:600;font-size:15px;margin-bottom:6px;color:var(--bento-text);">' +
+        (this._lang === 'pl' ? 'Brak urządzeń w topologii' : 'Run a scan to see the topology') +
+        '</div>' +
+        '<div style="font-size:12px;color:var(--bento-text-secondary);">' +
+        (this._lang === 'pl' ? 'Kliknij Skanuj, aby wykryć urządzenia w sieci.' : 'Click Rescan to discover devices on your network.') +
+        '</div></div>';
     }
 
-    // Simple SVG topology
-    const w = 800, h = 400;
-    const centerX = w / 2, centerY = h / 2;
-    const radius = 120;
+    // ── Category colour palette (Bento tokens) ───────────────────────────────
+    const CAT_COLOR = {
+      'Router':     { fill: 'var(--bento-primary)',        stroke: 'var(--bento-primary)' },
+      'Computer':   { fill: 'var(--bento-info)',           stroke: 'var(--bento-info)' },
+      'Phone':      { fill: 'var(--bento-success)',        stroke: 'var(--bento-success)' },
+      'Tablet':     { fill: 'var(--bento-success)',        stroke: 'var(--bento-success)' },
+      'Camera':     { fill: 'var(--bento-warning)',        stroke: 'var(--bento-warning)' },
+      'Smart Home': { fill: 'var(--bento-primary-2)',      stroke: 'var(--bento-primary-2)' },
+      'Media':      { fill: 'var(--bento-primary-3)',      stroke: 'var(--bento-primary-3)' },
+      'Other':      { fill: 'var(--bento-text-secondary)', stroke: 'var(--bento-text-secondary)' }
+    };
+    const COLOR_UNREACHABLE_FILL   = 'var(--bento-text-muted)';
+    const COLOR_UNREACHABLE_STROKE = 'var(--bento-border)';
 
-    // Router at center
-    const nodes = [{ ip: this._routerIp, name: this._t('router'), reachable: true, isRouter: true, x: centerX, y: centerY }];
+    // ── Clutter handling: cap at 40 visible device nodes ────────────────────
+    const MAX_NODES = 40;
+    let deviceNodes = this.devices.slice();
+    let groupNodes  = [];
 
-    // Arrange devices in circle
-    this.devices.forEach((d, i) => {
-      const angle = (i / this.devices.length) * Math.PI * 2;
-      nodes.push({
-        ip: d.ip,
-        name: d.name,
-        reachable: d.reachable,
-        isRouter: false,
-        x: centerX + Math.cos(angle) * radius,
-        y: centerY + Math.sin(angle) * radius
+    if (deviceNodes.length > MAX_NODES) {
+      deviceNodes.sort((a, b) => {
+        const ar = a.reachable === true ? 0 : a.reachable === false ? 1 : 2;
+        const br = b.reachable === true ? 0 : b.reachable === false ? 1 : 2;
+        return ar - br;
       });
+      const shown  = deviceNodes.slice(0, MAX_NODES);
+      const hidden = deviceNodes.slice(MAX_NODES);
+      deviceNodes  = shown;
+      const byCat  = {};
+      hidden.forEach(d => {
+        const c = d.category || 'Other';
+        byCat[c] = (byCat[c] || 0) + 1;
+      });
+      Object.keys(byCat).forEach(cat => {
+        groupNodes.push({ isSummary: true, category: cat, count: byCat[cat] });
+      });
+    }
+
+    // ── SVG canvas geometry ──────────────────────────────────────────────────
+    // viewBox 800×520 — scales to card width via CSS width:100%.
+    // Inner ring (r=180): individual device nodes.
+    // Outer ring (r=290): category summary nodes when >40 devices.
+    const VW = 800, VH = 520;
+    const cx = VW / 2, cy = VH / 2;
+    const INNER_R   = 180;
+    const OUTER_R   = 290;
+    const NODE_R    = 18;
+    const HUB_R     = 28;
+    const SUMMARY_R = 22;
+
+    // Assign polar angles starting at 12 o'clock (−π/2)
+    const total = deviceNodes.length;
+    deviceNodes.forEach((d, i) => {
+      const angle = (i / total) * Math.PI * 2 - Math.PI / 2;
+      d._x = cx + Math.cos(angle) * INNER_R;
+      d._y = cy + Math.sin(angle) * INNER_R;
+    });
+    const gTotal = groupNodes.length;
+    groupNodes.forEach((g, i) => {
+      const angle = (i / (gTotal || 1)) * Math.PI * 2 - Math.PI / 2;
+      g._x = cx + Math.cos(angle) * OUTER_R;
+      g._y = cy + Math.sin(angle) * OUTER_R;
     });
 
-    let svg = '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;height:400px;border:1px solid var(--bento-border);border-radius:var(--bento-radius-sm)">';
+    // ── SVG build ────────────────────────────────────────────────────────────
+    let svg = '<svg viewBox="0 0 ' + VW + ' ' + VH + '" xmlns="http://www.w3.org/2000/svg"' +
+      ' style="width:100%;display:block;background:var(--bento-bg);' +
+      'border:1px solid var(--bento-border);border-radius:var(--bento-radius-sm);"' +
+      ' role="img" aria-label="Network topology graph">';
 
-    // Lines from router to devices
-    nodes.slice(1).forEach(n => {
-      svg += '<line x1="' + nodes[0].x + '" y1="' + nodes[0].y + '" x2="' + n.x + '" y2="' + n.y + '" stroke="var(--bento-border)" stroke-width="2"/>';
+    // Defs: hub glow gradient
+    svg += '<defs>' +
+      '<radialGradient id="nmHubGlow" cx="50%" cy="50%" r="50%">' +
+      '<stop offset="0%"   stop-color="var(--bento-primary)" stop-opacity="0.25"/>' +
+      '<stop offset="100%" stop-color="var(--bento-primary)" stop-opacity="0"/>' +
+      '</radialGradient>' +
+      '</defs>';
+
+    // Hub glow halo
+    svg += '<circle cx="' + cx + '" cy="' + cy + '" r="52" fill="url(#nmHubGlow)"/>';
+
+    // Connector lines: devices → hub
+    deviceNodes.forEach(d => {
+      const isReach  = d.reachable === true;
+      const isUnknwn = d.reachable === null || d.reachable === undefined;
+      const opacity  = isUnknwn ? '0.25' : isReach ? '0.45' : '0.2';
+      const dash     = isReach ? '' : ' stroke-dasharray="4 3"';
+      svg += '<line x1="' + cx + '" y1="' + cy + '" x2="' + d._x + '" y2="' + d._y + '"' +
+        ' stroke="var(--bento-border)" stroke-width="1.5" opacity="' + opacity + '"' + dash + '/>';
     });
 
-    // Nodes
-    nodes.forEach(n => {
-      const color = n.reachable ? '#10B981' : '#94A3B8';
-      svg += '<circle cx="' + n.x + '" cy="' + n.y + '" r="24" fill="' + color + '" opacity="0.2" stroke="' + color + '" stroke-width="2"/>' +
-        '<text x="' + n.x + '" y="' + (n.y + 28) + '" text-anchor="middle" font-size="11" fill="var(--bento-text)" font-family="Inter,sans-serif">' +
-        _esc(String(n.name || '').substring(0, 10)) + '</text>';
+    // Connector lines: group summaries → hub
+    groupNodes.forEach(g => {
+      svg += '<line x1="' + cx + '" y1="' + cy + '" x2="' + g._x + '" y2="' + g._y + '"' +
+        ' stroke="var(--bento-border)" stroke-width="1" opacity="0.25" stroke-dasharray="5 4"/>';
     });
+
+    // Device nodes
+    deviceNodes.forEach(d => {
+      const cat      = d.category || 'Other';
+      const catColor = CAT_COLOR[cat] || CAT_COLOR['Other'];
+      const isReach  = d.reachable === true;
+      const isUnreach = d.reachable === false;
+      const fill     = isUnreach ? COLOR_UNREACHABLE_FILL   : catColor.fill;
+      const stroke   = isUnreach ? COLOR_UNREACHABLE_STROKE : catColor.stroke;
+      const fillOp   = isUnreach ? '0.08' : '0.18';
+
+      svg += '<circle cx="' + d._x + '" cy="' + d._y + '" r="' + NODE_R + '"' +
+        ' fill="' + fill + '" fill-opacity="' + fillOp + '"' +
+        ' stroke="' + stroke + '" stroke-width="' + (isReach ? '2' : '1.5') + '"' +
+        (isUnreach ? ' stroke-dasharray="3 2"' : '') + '/>';
+
+      // Emoji icon centred in node
+      svg += '<text x="' + d._x + '" y="' + d._y + '"' +
+        ' text-anchor="middle" dominant-baseline="central"' +
+        ' font-size="13" font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif">' +
+        _esc(d.icon || '📡') + '</text>';
+
+      // Name label below node (max 12 chars)
+      const label = String(d.name || d.ip || '').substring(0, 12);
+      svg += '<text x="' + d._x + '" y="' + (d._y + NODE_R + 11) + '"' +
+        ' text-anchor="middle" font-size="9.5"' +
+        ' font-family="Inter,SF Pro,system-ui,sans-serif"' +
+        ' fill="var(--bento-text-secondary)" font-weight="500">' +
+        _esc(label) + '</text>';
+
+      // Reachability dot (top-right quadrant of node)
+      if (d.reachable === true || d.reachable === false) {
+        const dotColor = d.reachable ? 'var(--bento-success)' : 'var(--bento-error)';
+        svg += '<circle cx="' + (d._x + NODE_R * 0.7) + '" cy="' + (d._y - NODE_R * 0.7) + '"' +
+          ' r="4.5" fill="' + dotColor + '" stroke="var(--bento-card)" stroke-width="1.5"/>';
+      }
+    });
+
+    // Summary group nodes (outer ring)
+    groupNodes.forEach(g => {
+      const catColor = CAT_COLOR[g.category] || CAT_COLOR['Other'];
+      svg += '<circle cx="' + g._x + '" cy="' + g._y + '" r="' + SUMMARY_R + '"' +
+        ' fill="' + catColor.fill + '" fill-opacity="0.12"' +
+        ' stroke="' + catColor.stroke + '" stroke-width="1.5" stroke-dasharray="4 3"/>';
+      svg += '<text x="' + g._x + '" y="' + g._y + '"' +
+        ' text-anchor="middle" dominant-baseline="central"' +
+        ' font-size="11" font-weight="700" font-family="Inter,system-ui,sans-serif"' +
+        ' fill="' + catColor.fill + '">+' + g.count + '</text>';
+      svg += '<text x="' + g._x + '" y="' + (g._y + SUMMARY_R + 11) + '"' +
+        ' text-anchor="middle" font-size="9" font-family="Inter,system-ui,sans-serif"' +
+        ' fill="var(--bento-text-secondary)">' + _esc(g.category) + '</text>';
+    });
+
+    // Hub node (router / HA gateway)
+    svg += '<circle cx="' + cx + '" cy="' + cy + '" r="' + HUB_R + '"' +
+      ' fill="var(--bento-primary)" fill-opacity="0.18"' +
+      ' stroke="var(--bento-primary)" stroke-width="2.5"/>';
+    svg += '<text x="' + cx + '" y="' + cy + '"' +
+      ' text-anchor="middle" dominant-baseline="central"' +
+      ' font-size="18" font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif">📡</text>';
+    const routerLabel = this._routerIp || 'Router';
+    svg += '<text x="' + cx + '" y="' + (cy + HUB_R + 12) + '"' +
+      ' text-anchor="middle" font-size="9.5" font-weight="600"' +
+      ' font-family="SF Mono,Fira Code,monospace" fill="var(--bento-primary)">' +
+      _esc(routerLabel) + '</text>';
 
     svg += '</svg>';
-    return svg;
-  }
 
+    // ── Legend ────────────────────────────────────────────────────────────────
+    const reachable   = this.devices.filter(d => d.reachable === true).length;
+    const unreachable = this.devices.filter(d => d.reachable === false).length;
+    const unknown     = this.devices.length - reachable - unreachable;
+    const clipped     = this.devices.length > MAX_NODES ? this.devices.length - MAX_NODES : 0;
+
+    let legend = '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;' +
+      'font-size:11px;color:var(--bento-text-secondary);align-items:center;">';
+    legend += '<span style="display:flex;align-items:center;gap:4px;">' +
+      '<span style="width:8px;height:8px;border-radius:50%;background:var(--bento-success);display:inline-block;"></span>' +
+      reachable + ' ' + (this._lang === 'pl' ? 'dostępnych' : 'reachable') + '</span>';
+    legend += '<span style="display:flex;align-items:center;gap:4px;">' +
+      '<span style="width:8px;height:8px;border-radius:50%;background:var(--bento-error);display:inline-block;"></span>' +
+      unreachable + ' ' + (this._lang === 'pl' ? 'niedostępnych' : 'unreachable') + '</span>';
+    if (unknown > 0) {
+      legend += '<span style="display:flex;align-items:center;gap:4px;">' +
+        '<span style="width:8px;height:8px;border-radius:50%;background:var(--bento-text-muted);display:inline-block;"></span>' +
+        unknown + ' ' + (this._lang === 'pl' ? 'nieznanych' : 'unknown') + '</span>';
+    }
+    if (clipped > 0) {
+      legend += '<span style="margin-left:auto;font-style:italic;">' +
+        (this._lang === 'pl' ? 'Pokazano 40 z ' + this.devices.length : 'Showing 40 of ' + this.devices.length + ' devices') +
+        '</span>';
+    }
+    legend += '</div>';
+
+    // ── Category key ──────────────────────────────────────────────────────────
+    const usedCats = [...new Set(this.devices.map(d => d.category || 'Other'))].sort();
+    const catIcons = {
+      'Router': '📡', 'Computer': '💻', 'Phone': '📱', 'Tablet': '📲',
+      'Camera': '📷', 'Smart Home': '🏠', 'Media': '📺', 'Other': '📡'
+    };
+    let catKey = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">';
+    usedCats.forEach(cat => {
+      catKey += '<span style="display:flex;align-items:center;gap:4px;font-size:10px;' +
+        'color:var(--bento-text-secondary);background:var(--bento-bg);' +
+        'border:1px solid var(--bento-border);border-radius:var(--bento-radius-pill);padding:2px 8px;">' +
+        (catIcons[cat] || '📡') + ' ' + _esc(cat) + '</span>';
+    });
+    catKey += '</div>';
+
+    return svg + legend + catKey;
+  }
   _renderSubnetsTab() {
     let h = '<div class="tree-view">';
 
