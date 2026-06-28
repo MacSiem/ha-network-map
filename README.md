@@ -6,6 +6,10 @@ Visualize the devices Home Assistant already knows about, and probe their reacha
 
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1+-blue.svg?logo=homeassistant)](https://www.home-assistant.io/) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Version](https://img.shields.io/badge/Version-5.0.0-success.svg)](#changelog)
 
+## Screenshot
+
+![Screenshot](screenshot.png)
+
 ## Architecture
 
 This repository ships a single HACS integration that bundles two paired components, both maintained by the same author:
