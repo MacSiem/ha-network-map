@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Network Map screenshot harness</title>
+<style>
+  html, body { margin: 0; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body.light { background: #f4f5f7; }
+  body.light ha-network-map { --card-background-color: #ffffff; --primary-background-color: #f4f5f7; }
+  body.dark { background: #111318; }
+  body.dark ha-network-map { --card-background-color: #1c1e26; --primary-background-color: #111318; }
+  ha-network-map { display: block; width: 600px; }
+</style>
+</head>
+<body>
+<ha-network-map id="card"></ha-network-map>
+<script>
+  try { localStorage.setItem('ha-intro-dismissed-ha-network-map', '1'); } catch (e) {}
+</script>
+<script src="../../custom_components/ha_network_map/www/ha-network-map.js"></script>
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const theme = params.get('theme') === 'dark' ? 'dark' : 'light';
+  const tabParam = params.get('tab');
+  document.body.className = theme;
+  const now = Date.now(); const h = 3600000;
+
+  // Demo devices — shape matches scanner.Device.to_dict() as consumed by
+  // ha_network_map/list_devices. IPs/MACs are obviously fake demo values.
+  const demoDevices = [
+    { key: 'aa:bb:cc:dd:ee:01', name: 'Living Room Router', ip: '192.168.1.1', mac: 'AA:BB:CC:DD:EE:01',
+      manufacturer: 'Ubiquiti', model: 'UniFi Dream Machine', sources: ['device_registry'],
+      entity_ids: [], reachable: true, open_ports: [443, 22] },
+    { key: '192.168.1.42', name: 'Kitchen MacBook', ip: '192.168.1.42', mac: 'AA:BB:CC:DD:EE:02',
+      manufacturer: 'Apple', model: 'MacBook Pro', sources: ['device_tracker'],
+      entity_ids: ['device_tracker.kitchen_macbook'], reachable: true, open_ports: [] },
+    { key: '192.168.1.51', name: "Alex's iPhone", ip: '192.168.1.51', mac: 'AA:BB:CC:DD:EE:03',
+      manufacturer: 'Apple', model: 'iPhone 15', sources: ['device_tracker'],
+      entity_ids: ['device_tracker.alexs_iphone'], reachable: true, open_ports: [] },
+    { key: 'aa:bb:cc:dd:ee:04', name: 'Living Room iPad', ip: '192.168.1.52', mac: 'AA:BB:CC:DD:EE:04',
+      manufacturer: 'Apple', model: 'iPad Air', sources: ['device_registry'],
+      entity_ids: [], reachable: false, open_ports: [] },
+    { key: 'aa:bb:cc:dd:ee:05', name: 'Front Door Camera', ip: '192.168.1.60', mac: 'AA:BB:CC:DD:EE:05',
+      manufacturer: 'Ubiquiti', model: 'G4 Doorbell', sources: ['device_registry'],
+      entity_ids: [], reachable: true, open_ports: [554, 443] },
+    { key: 'aa:bb:cc:dd:ee:06', name: 'Living Room Lamp', ip: null, mac: 'AA:BB:CC:DD:EE:06',
+      manufacturer: 'IKEA', model: 'TRADFRI', sources: ['device_registry'],
+      entity_ids: [], reachable: null, open_ports: [] },
+    { key: 'aa:bb:cc:dd:ee:07', name: 'Living Room TV', ip: '192.168.1.70', mac: 'AA:BB:CC:DD:EE:07',
+      manufacturer: 'LG', model: 'OLED55', sources: ['device_registry'],
+      entity_ids: [], reachable: true, open_ports: [8080] },
+    { key: '192.168.1.80', name: 'Guest Phone', ip: '192.168.1.80', mac: 'AA:BB:CC:DD:EE:08',
+      manufacturer: 'Samsung', model: 'Galaxy S24', sources: ['device_tracker'],
+      entity_ids: ['device_tracker.guest_phone'], reachable: false, open_ports: [] },
+  ];
+
+  // A subset also appears as device_tracker.* states, exercising the card's
+  // legacy per-entity merge path alongside the integration device list.
+  const trackerStates = {
+    'device_tracker.kitchen_macbook': {
+      entity_id: 'device_tracker.kitchen_macbook', state: 'home',
+      attributes: { friendly_name: 'Kitchen MacBook', ip_address: '192.168.1.42', mac_address: 'AA:BB:CC:DD:EE:02', source_type: 'router' },
+      last_changed: new Date(now - 2 * h).toISOString(), last_updated: new Date(now - 2 * h).toISOString(),
+    },
+    'device_tracker.alexs_iphone': {
+      entity_id: 'device_tracker.alexs_iphone', state: 'home',
+      attributes: { friendly_name: "Alex's iPhone", ip_address: '192.168.1.51', mac_address: 'AA:BB:CC:DD:EE:03', source_type: 'router' },
+      last_changed: new Date(now - 0.2 * h).toISOString(), last_updated: new Date(now - 0.2 * h).toISOString(),
+    },
+    'device_tracker.guest_phone': {
+      entity_id: 'device_tracker.guest_phone', state: 'not_home',
+      attributes: { friendly_name: 'Guest Phone', ip_address: '192.168.1.80', mac_address: 'AA:BB:CC:DD:EE:08', source_type: 'router' },
+      last_changed: new Date(now - 20 * h).toISOString(), last_updated: new Date(now - 20 * h).toISOString(),
+    },
+  };
+
+  const reachableCount = demoDevices.filter(d => d.reachable === true).length;
+  const withIpCount = demoDevices.filter(d => d.ip).length;
+
+  const hass = {
+    language: 'en',
+    themes: { darkMode: theme === 'dark' },
+    states: trackerStates,
+    services: {},
+    connection: { subscribeEvents: () => Promise.resolve(() => {}) },
+    callWS: async (msg) => {
+      const t = String(msg && msg.type || '');
+      if (t === 'config/device_registry/list') {
+        return [];
+      }
+      if (t === 'ha_network_map/list_devices') {
+        return { devices: demoDevices };
+      }
+      if (t === 'ha_network_map/status') {
+        return {
+          device_count: demoDevices.length,
+          with_ip: withIpCount,
+          reachable: reachableCount,
+          last_scan_started_at: (now - 5 * 60000) / 1000,
+          last_scan_finished_at: (now - 5 * 60000 + 4000) / 1000,
+          queued: false,
+        };
+      }
+      if (t === 'ha_network_map/scan') {
+        return {
+          device_count: demoDevices.length,
+          with_ip: withIpCount,
+          reachable: reachableCount,
+          last_scan_started_at: now / 1000,
+          last_scan_finished_at: now / 1000 + 3,
+          queued: false,
+        };
+      }
+      return {};
+    },
+    callApi: async () => ({}),
+    callService: async () => ({}),
+  };
+
+  const card = document.getElementById('card');
+  card.setConfig({ type: 'custom:ha-network-map', title: 'Network Map', router_ip: '192.168.1.1' });
+  card.hass = hass;
+  setTimeout(() => {
+    card.hass = { ...hass };
+    if (tabParam && ['devices', 'topology', 'subnets', 'bindings'].includes(tabParam) && typeof card.setActiveTab === 'function') {
+      card.setActiveTab(tabParam);
+    }
+  }, 400);
+
+  const scrub = () => {
+    try {
+      card.shadowRoot && card.shadowRoot.querySelectorAll(
+        '#tip-banner, [class*="banner"], .donate-section'
+      ).forEach(n => n.remove());
+    } catch (e) {}
+  };
+  setInterval(scrub, 150);
+  setTimeout(() => { scrub(); document.title = 'READY'; }, 1500);
+})();
+</script>
+</body>
+</html>
