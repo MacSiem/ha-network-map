@@ -105,10 +105,14 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
 
     # Cache-bust on integration upgrades by reading manifest.version.
     version_suffix = ""
-    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
     try:
-        with open(manifest_path, encoding="utf-8") as handle:
-            version_suffix = f"?v={json.load(handle).get('version', '0')}"
+        # Non-blocking: HA's loader caches integration metadata (reading the
+        # manifest with open() here runs inside the event loop and triggers
+        # HA's blocking-call warning).
+        from homeassistant.loader import async_get_integration
+
+        integration = await async_get_integration(hass, DOMAIN)
+        version_suffix = f"?v={integration.version or '0'}"
     except Exception:  # pragma: no cover - non-fatal
         version_suffix = ""
 
