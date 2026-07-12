@@ -1,4 +1,4 @@
-/* HA Tools split — ha-network-map v5.0.6 (2026-05-12) — single-tool standalone repo */
+/* HA Tools split — ha-network-map v5.0.8 (2026-07-12) — single-tool standalone repo */
 (function() {
 'use strict';
 

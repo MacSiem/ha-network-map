@@ -116,7 +116,9 @@ data:
 
 Only private addresses (RFC1918 / loopback / link-local) are probed unless
 `include_public_ips` is enabled. A scan already in progress causes new calls
-to return the current status instead of running twice.
+to return the current status instead of running twice. A single scan probes
+at most 256 devices (`DEFAULT_MAX_DEVICES_PER_SCAN`); on larger networks the
+remaining devices are skipped for that run.
 
 ## Automation example
 

@@ -1,6 +1,8 @@
 """WebSocket API for the Network Map integration.
 
-Exposes three admin-only commands consumed by the bundled Lovelace card:
+Exposes three commands consumed by the bundled Lovelace card — two open
+read commands (``list_devices``, ``status``) and one admin-only command
+(``scan``, which actively probes the network):
 
 * ``ha_network_map/list_devices`` – return the current device map (no probe)
 * ``ha_network_map/scan``          – probe TCP reachability from the HA host

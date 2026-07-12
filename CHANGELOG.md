@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.8] - 2026-07-12
+
+- Fix: corrected the stale `websocket_api.py` docstring — `list_devices` and `status` are open read commands; only `scan` is admin-only.
+- Docs: README now documents that a single scan probes at most 256 devices (`DEFAULT_MAX_DEVICES_PER_SCAN`); on larger networks the remaining devices are skipped for that run.
+- Chore: removed the `country` key from `hacs.json` — it hid the repository from HACS users outside PL/GB/US/DE.
+- Chore: aligned card JS version header with `manifest.json` (5.0.8).
+
 ## [5.0.7] - 2026-07-12
 
 - Fix: the card now renders for non-admin Home Assistant users — read-only `list_devices` and `status` websocket commands no longer require admin. `scan` stays admin-only — it actively probes the network.
