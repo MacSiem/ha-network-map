@@ -36,7 +36,8 @@ def _scanner(hass: HomeAssistant) -> NetworkScanner:
 @websocket_api.websocket_command(
     {vol.Required("type"): "ha_network_map/list_devices"}
 )
-@websocket_api.require_admin
+# Read-only: open to every logged-in user so the card renders for non-admins.
+# scan stays admin-only — it actively probes the network.
 @websocket_api.async_response
 async def _ws_list(
     hass: HomeAssistant,
@@ -91,7 +92,6 @@ async def _ws_scan(
 @websocket_api.websocket_command(
     {vol.Required("type"): "ha_network_map/status"}
 )
-@websocket_api.require_admin
 @websocket_api.async_response
 async def _ws_status(
     hass: HomeAssistant,

@@ -1,5 +1,9 @@
 # Changelog
 
+## [5.0.7] - 2026-07-12
+
+- Fix: the card now renders for non-admin Home Assistant users — read-only `list_devices` and `status` websocket commands no longer require admin. `scan` stays admin-only — it actively probes the network.
+
 ## [5.0.6] - 2026-06-15
 
 - Theme: dark/light now follows the active Home Assistant theme (luminance of --card-background-color) instead of OS prefers-color-scheme.
