@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.10 (2026-07-17)
+
+- Fix (UI): responsive tab bar — tabs stretch to fill the card width and wrap on narrow layouts instead of being pinned to content width and clipped (shared HA Tools tab styling).
+
 ## 5.0.9 (2026-07-12)
 
 - Fix: manifest version for the card cache-bust URL is now read through HA's
