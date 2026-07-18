@@ -1,4 +1,4 @@
-/* HA Tools split — ha-network-map v5.0.12 (2026-07-12) — single-tool standalone repo */
+/* HA Tools split — ha-network-map v5.0.13 (2026-07-12) — single-tool standalone repo */
 (function() {
 'use strict';
 
@@ -1198,7 +1198,6 @@ class HaNetworkMap extends HTMLElement {
       switch (this.activeTab) {
         case 'devices': content = this._renderDevicesTab(); break;
         case 'topology': content = this._renderTopologyTab(); break;
-        case 'subnets': content = this._renderSubnetsTab(); break;
         case 'bindings': content = this._renderBindingsTab(); break;
       }
     }
@@ -1214,7 +1213,6 @@ class HaNetworkMap extends HTMLElement {
       '<div class="tabs">' +
       '<button class="tab-btn ' + (this.activeTab === 'devices' ? 'active' : '') + '" data-tab="devices">' + this._t('devicesTab') + '</button>' +
       '<button class="tab-btn ' + (this.activeTab === 'topology' ? 'active' : '') + '" data-tab="topology">' + this._t('topologyTab') + '</button>' +
-      '<button class="tab-btn ' + (this.activeTab === 'subnets' ? 'active' : '') + '" data-tab="subnets">' + this._t('subnetsTab') + '</button>' +
       '<button class="tab-btn ' + (this.activeTab === 'bindings' ? 'active' : '') + '" data-tab="bindings">' + this._t('bindingsTab') + '</button>' +
       '</div>' +
       (this._scanError ? '<div style="margin:8px 12px;padding:10px 14px;background:var(--bento-error-light);color:var(--bento-error);border:1px solid var(--bento-error-border);border-radius:var(--bento-radius-sm);font-size:13px;">⚠️ ' + this._scanError + '</div>' : '') +

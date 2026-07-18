@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.13 (2026-07-18)
+
+- Fix: remove the Subnets tab. Since v5 the bundled integration owns scanning server-side and never received the client-side subnet list, so the tab looked like a setting but changed nothing.
+
 ## 5.0.12 (2026-07-18)
 
 - Fix (UI): the small accent dot before section titles no longer detaches from the title text (it was pushed to the opposite edge by the header's flex space-between); it is now pinned next to the title.
