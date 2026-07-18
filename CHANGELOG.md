@@ -1,5 +1,9 @@
 # Changelog
 
+## 5.0.12 (2026-07-18)
+
+- Fix (UI): the small accent dot before section titles no longer detaches from the title text (it was pushed to the opposite edge by the header's flex space-between); it is now pinned next to the title.
+
 ## 5.0.11 (2026-07-17)
 
 - Fix (UI): responsive tab bar — tabs stretch to fill the card width and wrap on narrow layouts instead of being pinned to content width and clipped (shared HA Tools tab styling).
