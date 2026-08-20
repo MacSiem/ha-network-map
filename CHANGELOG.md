@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.0.14 (2026-08-20)
+
+- Fix: move the bundled card existence check to Home Assistant's executor so
+  integration setup no longer performs a synchronous filesystem call in the
+  event loop.
+
 ## 5.0.13 (2026-07-18)
 
 - Fix: remove the Subnets tab. Since v5 the bundled integration owns scanning server-side and never received the client-side subnet list, so the tab looked like a setting but changed nothing.

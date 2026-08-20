@@ -84,7 +84,7 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     card_path = os.path.join(
         os.path.dirname(__file__), _CARD_PACKAGE_DIR, _CARD_FILENAME
     )
-    if not os.path.isfile(card_path):
+    if not await hass.async_add_executor_job(os.path.isfile, card_path):
         _LOGGER.error(
             "Bundled card file missing at %s; card will not load", card_path
         )
