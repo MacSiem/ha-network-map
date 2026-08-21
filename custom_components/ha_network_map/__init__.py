@@ -16,6 +16,7 @@ from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers.service import async_register_admin_service
 
 from .const import (
     DATA_FRONTEND_REGISTERED,
@@ -54,7 +55,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             include_public_ips=call.data.get("include_public_ips", False),
         )
 
-    hass.services.async_register(DOMAIN, "scan", _handle_scan)
+    async_register_admin_service(hass, DOMAIN, "scan", _handle_scan)
 
     _LOGGER.debug("Network Map set up (entry_id=%s)", entry.entry_id)
     return True

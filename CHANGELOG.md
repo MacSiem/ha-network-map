@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.0.15 (2026-08-21)
+
+- Security: require Home Assistant administrator privileges for the
+  `ha_network_map.scan` service, matching the existing admin-only WebSocket
+  scan command.
+- Compatibility: raise the minimum Home Assistant version to 2024.7, where
+  the integration's `StaticPathConfig` frontend registration API is available.
+- Chore: align the bundled card version header with the integration release.
+
 ## 5.0.14 (2026-08-20)
 
 - Fix: move the bundled card existence check to Home Assistant's executor so
