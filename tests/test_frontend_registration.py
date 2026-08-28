@@ -73,8 +73,19 @@ class FrontendRegistrationTests(unittest.TestCase):
         card_header = CARD_PATH.read_text(encoding="utf-8").splitlines()[0]
 
         self.assertEqual(hacs["homeassistant"], "2024.7.0")
-        self.assertEqual(manifest["version"], "5.0.15")
-        self.assertIn("v5.0.15", card_header)
+        self.assertEqual(manifest["version"], "5.0.16")
+        self.assertIn("v5.0.16", card_header)
+
+    def test_card_does_not_install_cross_card_injectors(self) -> None:
+        source = CARD_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("const _esc = (s) => _escBase(_asText(s));", source)
+        self.assertIn('data-source="own-card"', source)
+        self.assertIn("buymeacoffee.com/macsiem", source)
+        self.assertIn("this.shadowRoot.innerHTML = html + ownDonateFooter();", source)
+        for marker in ("SPLIT_TAGS", "deepFindAll", "injectAll", "__haToolsSplitDonateInjector", "window._haToolsEsc"):
+            with self.subTest(marker=marker):
+                self.assertNotIn(marker, source)
 
 
 if __name__ == "__main__":

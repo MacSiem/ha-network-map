@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.0.16 (2026-08-28)
+
+- Isolation: Bento CSS is component-local and cannot be captured from `window.HAToolsBentoCSS` by load order.
+- Isolation: removed the suite-wide DOM injector and all shared global escape-helper references.
+- Security: card and editor values use local String-before-escape helpers.
+- Tests: added deterministic residual checks for both defect classes.
+- UX: restored the donate footer within the Network Map card's own shadow root.
+
 ## 5.0.15 (2026-08-21)
 
 - Security: require Home Assistant administrator privileges for the

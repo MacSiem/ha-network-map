@@ -12,3 +12,8 @@ jobs:
         run: pip install pyyaml
       - name: Run unit tests
         run: python -m tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run frontend smoke test
+        run: npm ci && npm run test:smoke

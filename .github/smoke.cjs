@@ -60,6 +60,7 @@ const delay = (ms) => new Promise(r => setTimeout(r, ms));
   const targets = [];
   for (const f of files) {
     const code = fs.readFileSync(f, 'utf8');
+    if (code.includes('window.HAToolsBentoCSS')) { console.error('smoke: residual global Bento CSS singleton'); process.exit(1); }
     for (const t of tagsIn(code)) targets.push({ file: f, tag: t });
   }
   if (!targets.length) { console.log('smoke: no custom elements found — skipping'); process.exit(0); }
@@ -70,6 +71,7 @@ const delay = (ms) => new Promise(r => setTimeout(r, ms));
       const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', { runScripts: 'dangerously', pretendToBeVisual: true, url: 'http://localhost/' });
       const { window } = dom;
       stub(window);
+      window.HAToolsBentoCSS = '/* poisoned-ha-tools-bento-css */';
       let asyncErr = null;
       window.addEventListener('error', e => { asyncErr = asyncErr || (e.error && e.error.message) || e.message; });
       window.onerror = (m) => { asyncErr = asyncErr || m; };
@@ -83,6 +85,7 @@ const delay = (ms) => new Promise(r => setTimeout(r, ms));
       const len = el.shadowRoot ? el.shadowRoot.innerHTML.length : 0;
       if (!el.shadowRoot) problem = 'no shadowRoot';
       else if (len < 50) problem = 'empty render (len=' + len + ')';
+      else if (el.shadowRoot.innerHTML.includes('poisoned-ha-tools-bento-css')) problem = 'pre-seeded global Bento CSS overrode component-local CSS';
       else if (asyncErr) problem = 'async error: ' + asyncErr;
       window.close();
     } catch (e) { problem = (e && e.message) ? e.message : String(e); }
