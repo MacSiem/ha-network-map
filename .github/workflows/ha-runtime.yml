@@ -8,14 +8,28 @@ permissions:
 jobs:
   ha-runtime:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - core: '2025.2.0'
+            python: '3.13'
+          - core: '2026.9.3'
+            python: '3.14'
+          - core: '2026.9.0b9'
+            python: '3.14'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
-          python-version: '3.13'
+          python-version: ${{ matrix.python }}
       - name: Install Home Assistant test harness
         run: |
-          pip install pytest-homeassistant-custom-component
+          pip install "homeassistant==${{ matrix.core }}" pytest-homeassistant-custom-component
+          python - <<'PY'
+          from homeassistant.const import __version__
+          assert __version__ == '${{ matrix.core }}', __version__
+          PY
           # Requirements of the core integrations this integration depends on
           # (frontend serves the panel; panel_custom needs it).
           pip install $(python - <<'PY'
