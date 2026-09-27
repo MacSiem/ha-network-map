@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Register one storage-mode Lovelace resource and an administrator-only sidebar panel; preserve an existing HACS resource, refresh the owned resource on upgrade and remove owned UI entries on unload. YAML mode keeps the frontend fallback.
+- Require Home Assistant 2025.2 for Lovelace resource and panel APIs.
 - Default map now includes only MAC/IP devices; HACS repositories and service entries without connection evidence stay out. Optional filter includes explicit non-network connections.
 - Use the integration as the sole discovery source, avoiding duplicate browser tracker rows. Preserve reachability across list refreshes and remove stale registry rows.
 - Hide/unhide devices and override category using a stable registry ID in local browser storage. Link to HA device and entity pages.

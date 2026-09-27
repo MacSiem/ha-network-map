@@ -7,7 +7,7 @@ reachability from the Home Assistant host itself — not from your browser.
 Ships as a Home Assistant integration with a bundled Lovelace card; no manual
 resource entry required.
 
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.7+-blue.svg?logo=homeassistant)](https://www.home-assistant.io/) [![Version](https://img.shields.io/github/v/release/MacSiem/ha-network-map)](https://github.com/MacSiem/ha-network-map/releases) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.2+-blue.svg?logo=homeassistant)](https://www.home-assistant.io/) [![Version](https://img.shields.io/github/v/release/MacSiem/ha-network-map)](https://github.com/MacSiem/ha-network-map/releases) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 Part of the [HA Tools](https://github.com/MacSiem) ecosystem.
 
@@ -22,9 +22,9 @@ Part of the [HA Tools](https://github.com/MacSiem) ecosystem.
    no connection are excluded. The optional filter shows Bluetooth, Zigbee
    and other entries with an explicit connection but no network address.
 2. **The card is bundled and auto-registered.** The integration serves
-   `ha-network-map.js` as a static path and registers it as a frontend
-   resource on setup (cache-busted by the integration version) — you only add
-   `custom:ha-network-map` to a dashboard.
+   `ha-network-map.js`, registers a storage-mode Lovelace resource and an
+   administrator-only sidebar panel. YAML mode uses Home Assistant's frontend
+   fallback. You can also add `custom:ha-network-map` to a dashboard.
 3. **Reachability is probed from the HA host, not your browser.** TCP connect
    attempts against a smart-home port set (`80, 443, 8123, 6053, 1883, 8883,
    554, 22, 631` by default) run from the Home Assistant host, so results are
@@ -71,7 +71,8 @@ Dark mode follows your Home Assistant theme automatically.*
 3. Install **Network Map** and restart Home Assistant.
 4. **Settings → Devices & services → Add Integration → Network Map** (single
    instance, no fields to fill in).
-5. The Lovelace card is registered automatically — no resource entry needed.
+5. Administrators can open **Network Map** in the sidebar. The Lovelace card is
+   registered automatically — no resource entry needed.
 
 If you previously installed v4 as a Lovelace plugin, remove the old
 `/local/community/ha-network-map/...` resource entry under *Dashboards →

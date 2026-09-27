@@ -14,6 +14,7 @@ INIT_PATH = (
     / "ha_network_map"
     / "__init__.py"
 )
+FRONTEND_PATH = INIT_PATH.with_name("frontend.py")
 ROOT = Path(__file__).resolve().parents[1]
 HACS_PATH = ROOT / "hacs.json"
 MANIFEST_PATH = ROOT / "custom_components" / "ha_network_map" / "manifest.json"
@@ -30,7 +31,7 @@ class FrontendRegistrationTests(unittest.TestCase):
     """Keep filesystem access out of Home Assistant's event loop."""
 
     def test_card_existence_check_runs_in_executor(self) -> None:
-        tree = ast.parse(INIT_PATH.read_text(encoding="utf-8"))
+        tree = ast.parse(FRONTEND_PATH.read_text(encoding="utf-8"))
 
         executor_calls = [
             node
@@ -43,12 +44,11 @@ class FrontendRegistrationTests(unittest.TestCase):
 
         self.assertTrue(
             any(
-                len(call.value.args) == 2
-                and ast.unparse(call.value.args[0]) == "os.path.isfile"
-                and ast.unparse(call.value.args[1]) == "card_path"
+                len(call.value.args) == 1
+                and ast.unparse(call.value.args[0]) == "(www / CARD_FILENAME).is_file"
                 for call in executor_calls
             ),
-            "os.path.isfile(card_path) must be awaited via async_add_executor_job",
+            "Bundled card stat must be awaited via async_add_executor_job",
         )
 
     def test_network_scan_service_is_admin_only(self) -> None:
@@ -72,7 +72,7 @@ class FrontendRegistrationTests(unittest.TestCase):
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
         card_header = CARD_PATH.read_text(encoding="utf-8").splitlines()[0]
 
-        self.assertEqual(hacs["homeassistant"], "2024.7.0")
+        self.assertEqual(hacs["homeassistant"], "2025.2.0")
         self.assertEqual(manifest["version"], "5.0.16")
         self.assertIn("v5.0.16", card_header)
 
