@@ -36,7 +36,7 @@ def _scanner(hass: HomeAssistant) -> NetworkScanner:
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "ha_network_map/list_devices"}
+    {vol.Required("type"): "ha_network_map/list_devices", vol.Optional("include_non_network", default=False): bool}
 )
 # Read-only: open to every logged-in user so the card renders for non-admins.
 # scan stays admin-only — it actively probes the network.
@@ -48,7 +48,7 @@ async def _ws_list(
 ) -> None:
     """Return the device map without touching the network."""
     try:
-        devices = await _scanner(hass).list_devices()
+        devices = await _scanner(hass).list_devices(include_non_network=msg["include_non_network"])
     except Exception as err:  # pragma: no cover - defensive
         _LOGGER.exception("list_devices failed: %s", err)
         connection.send_error(msg["id"], "list_failed", str(err))
@@ -59,7 +59,7 @@ async def _ws_list(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "ha_network_map/scan",
-        vol.Optional("ports"): [vol.All(int, vol.Range(min=1, max=65535))],
+        vol.Optional("ports"): vol.All([vol.All(int, vol.Range(min=1, max=65535))], vol.Length(max=12)),
         vol.Optional("timeout", default=DEFAULT_PROBE_TIMEOUT_SECONDS): vol.All(
             vol.Coerce(float), vol.Range(min=0.05, max=5.0)
         ),

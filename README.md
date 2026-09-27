@@ -16,9 +16,11 @@ Part of the [HA Tools](https://github.com/MacSiem) ecosystem.
 **Short version: install the integration, add the card, browse.**
 
 1. **Discovery is read-only and server-side.** The bundled Python integration
-   reads devices straight from Home Assistant's own device registry, entity
-   registry, `device_tracker.*` states, and — where available — Zeroconf /
-   DHCP discovery caches. No browser-side enumeration, ever.
+   reads HA's device and entity registries, `device_tracker.*` states and, where
+   available, Zeroconf / DHCP discovery caches. By default it shows only
+   devices with a MAC or IP address. HACS repository and service entries with
+   no connection are excluded. The optional filter shows Bluetooth, Zigbee
+   and other entries with an explicit connection but no network address.
 2. **The card is bundled and auto-registered.** The integration serves
    `ha-network-map.js` as a static path and registers it as a frontend
    resource on setup (cache-busted by the integration version) — you only add
@@ -44,6 +46,12 @@ Part of the [HA Tools](https://github.com/MacSiem) ecosystem.
 | Device discovery from HA's registries (all users can view it) | Triggering a scan (admin-only — button, service, or automation) |
 | Reachability scope guard (RFC1918 / loopback / link-local only) | Enabling `include_public_ips` if you understand the implications |
 | Cache-busting the card on integration upgrades | Adding `custom:ha-network-map` to a dashboard |
+| Default MAC/IP filtering | Showing non-network connection types, hiding a device or changing its category |
+
+Hidden devices and category choices use the HA Device Registry ID where
+available, so an IP change does not lose the choice. The card links to the
+HA device and entity pages. These choices are stored in this browser's
+`localStorage`; they do not sync between browsers or household members.
 
 ## Screenshots
 
@@ -144,9 +152,8 @@ action:
   originates from the HA host, not a third-party service.
 - Device data stays inside Home Assistant — the integration only reads HA's
   own registries and discovery caches; nothing is sent externally.
-- The card uses browser `localStorage` only for a small set of UI
-  preferences (intro-dismissed marker and a user-supplied per-device label /
-  "binding" map). No device or scan data is cached in the browser.
+- The card uses browser `localStorage` for intro dismissal, bindings, hidden
+  device IDs and categories. Scan results are not persisted in the browser.
 - No telemetry, no analytics, no CDN-hosted assets.
 
 ## FAQ
@@ -161,13 +168,11 @@ Yes, as of 5.0.7. `list_devices` and `status` are open to every logged-in
 user, so the card renders for the whole household. Only triggering a new
 scan requires an administrator account.
 
-**Why do I only see `device_tracker.*` devices, not my Zigbee/Bluetooth
-gear?**
-You shouldn't — the integration reads the full device registry server-side,
-so Bluetooth, Zigbee, Z-Wave, MQTT, ESPHome, and any other integration that
-registers a device all show up, not just `device_tracker.*` entities. Devices
-without an IP (most Zigbee/Z-Wave/serial gear) show `—` for reachability
-instead of being flagged unreachable, since they were never scannable.
+**Why are my Zigbee/Bluetooth devices absent by default?**
+The map starts with MAC/IP devices. Select **Show devices without MAC/IP** to
+include entries with an explicit connection type, such as Zigbee or Bluetooth.
+Addressless service entries stay excluded. Devices without an IP show `—` for
+reachability because they cannot be probed.
 
 **A device reachability shows "unreachable" even though it's online.**
 A device only counts as unreachable when every probed port times out with no

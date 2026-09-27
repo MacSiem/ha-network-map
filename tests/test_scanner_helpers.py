@@ -13,6 +13,7 @@ touches ``hass``.
 from __future__ import annotations
 
 import importlib.util
+import asyncio
 import sys
 import types
 import unittest
@@ -109,6 +110,9 @@ class PrivateIpClassificationTests(unittest.TestCase):
     def test_public_ip_is_not_private(self) -> None:
         self.assertFalse(_is_private_ip("8.8.8.8"))
 
+    def test_documentation_range_is_not_probeable(self) -> None:
+        self.assertFalse(_is_private_ip("192.0.2.1"))
+
     def test_another_public_ip_is_not_private(self) -> None:
         self.assertFalse(_is_private_ip("1.1.1.1"))
 
@@ -194,6 +198,39 @@ class DeviceToDictTests(unittest.TestCase):
         self.assertIsNone(result["reachable"])
         self.assertEqual(result["sources"], [])
         self.assertEqual(result["open_ports"], [])
+
+
+class RegistryDiscoveryTests(unittest.TestCase):
+    def test_600_registry_rows_default_to_addressed_devices(self) -> None:
+        registry = {}
+        for index in range(600):
+            connections = {("mac", f"02:00:00:00:{index // 256:02x}:{index % 256:02x}")} if index < 50 else set()
+            if index == 51:
+                connections = {("bluetooth", "AA:BB:CC:DD:EE:FF")}
+            registry[str(index)] = types.SimpleNamespace(
+                id=str(index), connections=connections, configuration_url=None,
+                name=f"Device {index}", name_by_user=None,
+                manufacturer=None, model=None,
+            )
+        fake_hass = types.SimpleNamespace(
+            data={}, states=types.SimpleNamespace(async_all=lambda domain: []),
+        )
+        dr = sys.modules["homeassistant.helpers.device_registry"]
+        er = sys.modules["homeassistant.helpers.entity_registry"]
+        old_dr, old_er = dr.async_get, er.async_get
+        dr.async_get = lambda hass: types.SimpleNamespace(devices=registry)
+        er.async_get = lambda hass: types.SimpleNamespace(entities={})
+        try:
+            network_scanner = scanner.NetworkScanner(fake_hass)
+            rows = asyncio.run(network_scanner.list_devices())
+            self.assertEqual(len(rows), 50)
+            self.assertTrue(all(row["mac"] or row["ip"] for row in rows))
+            extras = asyncio.run(network_scanner.list_devices(include_non_network=True))
+            self.assertEqual(len(extras), 51)
+            self.assertEqual(next(row for row in extras if row["device_id"] == "51")["kind"], "bluetooth")
+            self.assertFalse(any(row["device_id"] == "51" for row in rows))
+        finally:
+            dr.async_get, er.async_get = old_dr, old_er
 
 
 if __name__ == "__main__":

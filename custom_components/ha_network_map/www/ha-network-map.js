@@ -524,6 +524,8 @@ class HaNetworkMap extends HTMLElement {
     this._scanProgress = { current: 0, total: 0 };
     this._lastScanTime = null;
     this._deviceRegistry = [];
+    this._includeNonNetwork = false;
+    this._devicePrefs = {};
 
     // UI State
     this.searchQuery = '';
@@ -569,6 +571,8 @@ class HaNetworkMap extends HTMLElement {
         // Detail
         details: 'Details', bind: 'Bind', unbind: 'Unbind', close: 'Close',
         category: 'Category', status: 'Status', lastSeen: 'Last Seen',
+        showOtherDevices: 'Show devices without MAC/IP', hideDevice: 'Hide device', showHidden: 'Show hidden',
+        openDevice: 'Open HA device', openEntity: 'Open HA entity',
       },
       pl: {
         // Tabs
@@ -595,6 +599,8 @@ class HaNetworkMap extends HTMLElement {
         // Detail
         details: 'Szczegóły', bind: 'Powiąż', unbind: 'Rozpowiąż', close: 'Zamknij',
         category: 'Kategoria', status: 'Stan', lastSeen: 'Ostatnio widoczne',
+        showOtherDevices: 'Pokaż urządzenia bez MAC/IP', hideDevice: 'Ukryj urządzenie', showHidden: 'Pokaż ukryte',
+        openDevice: 'Otwórz urządzenie HA', openEntity: 'Otwórz encję HA',
       }
     };
   }
@@ -633,6 +639,7 @@ class HaNetworkMap extends HTMLElement {
       // bundled Python integration owns the canonical device list and
       // reachability data; we just pull it once on first hass connect.
       this._loadBindings();
+      this._loadDevicePrefs();
       this._loadDeviceRegistry().then(() => this._reloadFromApi()).then(() => {
         this._doRender();
       });
@@ -723,6 +730,20 @@ class HaNetworkMap extends HTMLElement {
     } catch (e) { console.debug('[ha-network-map] caught:', e); }
   }
 
+  _loadDevicePrefs() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('ha-network-map-device-prefs') || '{}');
+      this._devicePrefs = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+    } catch (e) { this._devicePrefs = {}; }
+  }
+
+  _saveDevicePrefs() {
+    try { localStorage.setItem('ha-network-map-device-prefs', JSON.stringify(this._devicePrefs)); }
+    catch (e) { console.warn('[ha-network-map] Device preferences could not be saved', e); }
+  }
+
+  _preferenceId(device) { return device.device_id ? `device:${device.device_id}` : device.mac ? `mac:${device.mac.toLowerCase()}` : `key:${device.key}`; }
+
   _detectDefaultSubnet() {
     // Try to detect subnet from router IP config
     if (this._routerIp && /^\d+\.\d+\.\d+\.\d+$/.test(this._routerIp)) {
@@ -801,7 +822,7 @@ class HaNetworkMap extends HTMLElement {
     // `_integrationDevices` for the richer info the renderer can use.
     if (!this._hass) return;
     try {
-      const res = await this._hass.callWS({ type: 'ha_network_map/list_devices' });
+      const res = await this._hass.callWS({ type: 'ha_network_map/list_devices', include_non_network: this._includeNonNetwork });
       const list = (res && res.devices) || [];
       this._integrationDevices = list;
       const reachMap = {};
@@ -855,68 +876,27 @@ class HaNetworkMap extends HTMLElement {
   _buildDeviceList() {
     this.devices = [];
     const seen = new Set();
-
-    // Get device registry info for enrichment
-    const regInfo = this._getRegistryInfo();
-
-    // Get all device_tracker entities from HA
-    if (this._hass?.states) {
-      Object.values(this._hass.states).forEach(entity => {
-        if (!entity.entity_id || !entity.entity_id.startsWith('device_tracker.')) return;
-        const a = entity.attributes || {};
-        const name = a.friendly_name || entity.entity_id.split('.')[1];
-        const nameLow = name.toLowerCase();
-        const reg = regInfo[nameLow] || {};
-        const ip = a.ip_address || a.ip || a.local_ip || a.host_ip || reg.ip || null;
-        const mac = a.mac_address || a.mac || a.host_mac || reg.mac || null;
-        const manufacturer = a.manufacturer || reg.manufacturer || null;
-        const model = a.model || reg.model || null;
-
-        // Deduplicate by IP (if has one) or entity_id
-        const dedupeKey = ip || entity.entity_id;
-        if (seen.has(dedupeKey)) return;
-        seen.add(dedupeKey);
-        if (ip) seen.add(ip); // also mark IP as seen for scan merge
-
-        const bindKey = ip || entity.entity_id;
-        const isReachable = ip ? (this._scanResults[ip] === true) : null;
-
-        this.devices.push({
-          ip, mac, manufacturer, model, name,
-          category: this._cat(name, { manufacturer, model }),
-          icon: this._icon(name, { manufacturer, model }),
-          reachable: isReachable,
-          entity_id: entity.entity_id,
-          state: entity.state,
-          source_type: a.source_type || null,
-          lastSeen: a.last_seen || new Date().toISOString(),
-          binding: this._bindings[bindKey] || null
-        });
-      });
-    }
-
-    // v5: merge in the rest of the device map from the bundled Python
-    // integration. The v4 path only iterated `device_tracker.*`, which
-    // was the HACS reviewer's third concern — the vast majority of an
-    // HA install's devices (Bluetooth, Zigbee, Z-Wave, MQTT, ESPHome,
-    // most cloud integrations) never appear in `device_tracker.*`.
-    // The integration reads the full device registry server-side and
-    // joins reachability state from its own ICMP/TCP scan.
+    // The integration is the only discovery source. Mixing its rows with
+    // browser-side trackers duplicated devices and admitted addressless rows.
     if (Array.isArray(this._integrationDevices)) {
       for (const d of this._integrationDevices) {
         if (!d) continue;
-        const dedupeKey = d.ip || d.mac || d.key;
+        const dedupeKey = d.mac || d.ip || d.key;
         if (!dedupeKey || seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
         if (d.ip) seen.add(d.ip);
         const name = d.name || d.ip || d.mac || 'Unknown';
+        const preferenceId = this._preferenceId(d);
+        const preference = this._devicePrefs[preferenceId] || {};
+        if (preference.hidden && !this._showHidden) continue;
         this.devices.push({
+          key: d.key, device_id: d.device_id || null, kind: d.kind || 'network', preferenceId,
           ip: d.ip || null,
           mac: d.mac || null,
           manufacturer: d.manufacturer || null,
           model: d.model || null,
           name,
-          category: this._cat(name, { manufacturer: d.manufacturer, model: d.model }),
+          category: preference.category || this._cat(name, { manufacturer: d.manufacturer, model: d.model }),
           icon: this._icon(name, { manufacturer: d.manufacturer, model: d.model }),
           reachable: (d.reachable === true) ? true : (d.reachable === false ? false : null),
           entity_id: (d.entity_ids && d.entity_ids[0]) || null,
@@ -925,7 +905,7 @@ class HaNetworkMap extends HTMLElement {
           source_type: null,
           sources: d.sources || [],
           open_ports: d.open_ports || [],
-          lastSeen: new Date().toISOString(),
+          lastSeen: null,
           binding: this._bindings[dedupeKey] || null
         });
       }
@@ -1062,7 +1042,7 @@ class HaNetworkMap extends HTMLElement {
       '</div>';
 
     if (!this.devices.length) {
-      return h + '<div class="es">' + this._t('noDevicesFound') + '</div>';
+      return h + '<div class="toolbar"><label><input id="showOther" type="checkbox"' + (this._includeNonNetwork ? ' checked' : '') + '> ' + this._t('showOtherDevices') + '</label><label><input id="showHidden" type="checkbox"' + (this._showHidden ? ' checked' : '') + '> ' + this._t('showHidden') + '</label></div><div class="es">' + this._t('noDevicesFound') + '</div>';
     }
 
     if (this.selectedDevice) {
@@ -1070,8 +1050,10 @@ class HaNetworkMap extends HTMLElement {
     }
 
     const catOpts = cats.map(c => '<option value="' + c + '"' + (this._catFilter === c ? ' selected' : '') + '>' + c + '</option>').join('');
-    h += '<div class="toolbar"><input type="text" class="si" id="sI" placeholder="' + this._t('searchPlaceholder') + '" value="' + (this.searchQuery || '') + '">' +
-      '<select class="fs" id="cF"><option value="all">' + this._t('allCategories') + '</option>' + catOpts + '</select></div>';
+    h += '<div class="toolbar"><input type="text" class="si" id="sI" placeholder="' + this._t('searchPlaceholder') + '" value="' + _esc(this.searchQuery || '') + '">' +
+      '<select class="fs" id="cF"><option value="all">' + this._t('allCategories') + '</option>' + catOpts + '</select>' +
+      '<label><input id="showOther" type="checkbox"' + (this._includeNonNetwork ? ' checked' : '') + '> ' + this._t('showOtherDevices') + '</label>' +
+      '<label><input id="showHidden" type="checkbox"' + (this._showHidden ? ' checked' : '') + '> ' + this._t('showHidden') + '</label></div>';
 
     const ps = this._pageSize;
     const tp = Math.max(1, Math.ceil(this.filteredDevices.length / ps));
@@ -1116,7 +1098,7 @@ class HaNetworkMap extends HTMLElement {
     let rows = [
       [this._t('deviceName'), _esc(d.icon) + ' ' + _esc(d.name)],
       [this._t('category'), _esc(d.category)],
-      [this._t('status'), d.reachable ? this._t('reachableStatus') : this._t('unreachableStatus')],
+      [this._t('status'), d.reachable === null ? 'N/A' : d.reachable ? this._t('reachableStatus') : this._t('unreachableStatus')],
       [this._t('ipAddress'), _esc(d.ip || '—')],
       [this._t('macAddress'), _esc(d.mac || '—')]
     ];
@@ -1125,9 +1107,14 @@ class HaNetworkMap extends HTMLElement {
 
     const rh = rows.map(r => '<div class="dr"><span class="dl">' + r[0] + '</span><span class="dv">' + r[1] + '</span></div>').join('');
     const bindHtml = d.reachable ? '<button class="rb" id="bindBtn" data-ip="' + _esc(d.ip || d.name) + '">🔗 ' + this._t('bind') + '</button>' : '';
+    const categories = ['Phone', 'Tablet', 'Computer', 'Router', 'Camera', 'Smart Home', 'Media', 'Other'];
+    const categorySelect = '<label>' + this._t('category') + ' <select id="deviceCategory">' + categories.map(c => '<option value="' + c + '"' + (d.category === c ? ' selected' : '') + '>' + c + '</option>').join('') + '</select></label>';
+    const links = (d.device_id ? '<a href="/config/devices/device/' + encodeURIComponent(d.device_id) + '">' + this._t('openDevice') + '</a> ' : '') +
+      (d.entity_id ? '<a href="/config/entities/entity/' + encodeURIComponent(d.entity_id) + '">' + this._t('openEntity') + '</a>' : '');
+    const hidden = !!this._devicePrefs[d.preferenceId]?.hidden;
 
     return '<div class="dd" id="dD"><button class="dc" id="cD">✕ ' + this._t('close') + '</button><div style="clear:both"></div>' +
-      rh + '<div style="margin-top:12px">' + bindHtml + '</div></div>';
+      rh + '<div style="margin-top:12px">' + categorySelect + ' <button class="rb" id="hideDevice">' + (hidden ? this._t('showHidden') : this._t('hideDevice')) + '</button> ' + links + ' ' + bindHtml + '</div></div>';
   }
 
   _renderTopologyTab() {
@@ -1480,6 +1467,38 @@ class HaNetworkMap extends HTMLElement {
         this._doRender();
       });
     }
+
+    const showOther = this.shadowRoot.querySelector('#showOther');
+    if (showOther) showOther.addEventListener('change', async e => {
+      this._includeNonNetwork = e.target.checked;
+      this._currentPage = 1;
+      await this._reloadFromApi();
+      this._doRender();
+    });
+    const showHidden = this.shadowRoot.querySelector('#showHidden');
+    if (showHidden) showHidden.addEventListener('change', e => {
+      this._showHidden = e.target.checked;
+      this._buildDeviceList();
+      this._doRender();
+    });
+    const deviceCategory = this.shadowRoot.querySelector('#deviceCategory');
+    if (deviceCategory && this.selectedDevice) deviceCategory.addEventListener('change', e => {
+      const id = this.selectedDevice.preferenceId;
+      this._devicePrefs[id] = { ...this._devicePrefs[id], category: e.target.value };
+      this._saveDevicePrefs();
+      this._buildDeviceList();
+      this.selectedDevice = this.devices.find(d => d.preferenceId === id) || null;
+      this._doRender();
+    });
+    const hideDevice = this.shadowRoot.querySelector('#hideDevice');
+    if (hideDevice && this.selectedDevice) hideDevice.addEventListener('click', () => {
+      const id = this.selectedDevice.preferenceId;
+      this._devicePrefs[id] = { ...this._devicePrefs[id], hidden: !this._devicePrefs[id]?.hidden };
+      this._saveDevicePrefs();
+      this.selectedDevice = null;
+      this._buildDeviceList();
+      this._doRender();
+    });
 
     this.shadowRoot.querySelectorAll('th[data-s]').forEach(th => {
       th.addEventListener('click', () => {

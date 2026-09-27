@@ -46,6 +46,8 @@ class Device:
 
     key: str                # stable id, prefer mac, fallback to ip, fallback to entity_id
     name: str
+    device_id: str | None = None
+    kind: str = "network"
     ip: str | None = None
     mac: str | None = None
     manufacturer: str | None = None
@@ -59,6 +61,8 @@ class Device:
         return {
             "key": self.key,
             "name": self.name,
+            "device_id": self.device_id,
+            "kind": self.kind,
             "ip": self.ip,
             "mac": self.mac,
             "manufacturer": self.manufacturer,
@@ -76,7 +80,17 @@ def _is_private_ip(ip_str: str) -> bool:
         ip = ipaddress.ip_address(ip_str)
     except ValueError:
         return False
-    return ip.is_private or ip.is_loopback or ip.is_link_local
+    allowed = (
+        ipaddress.ip_network("10.0.0.0/8"),
+        ipaddress.ip_network("172.16.0.0/12"),
+        ipaddress.ip_network("192.168.0.0/16"),
+        ipaddress.ip_network("127.0.0.0/8"),
+        ipaddress.ip_network("169.254.0.0/16"),
+        ipaddress.ip_network("fc00::/7"),
+        ipaddress.ip_network("fe80::/10"),
+        ipaddress.ip_network("::1/128"),
+    )
+    return any(ip in network for network in allowed if ip.version == network.version)
 
 
 def _normalize_mac(value: str | None) -> str | None:
@@ -112,18 +126,25 @@ class NetworkScanner:
 
     # ---------------------------------------------------------- public API
 
-    async def list_devices(self) -> list[dict[str, Any]]:
+    async def list_devices(self, include_non_network: bool = False) -> list[dict[str, Any]]:
         """Return the current device map.
 
         Reads every HA-known source (registry, entities, optional
         zeroconf / dhcp) without touching the network. Returns whatever
         reachability info is cached from the most recent ``scan``.
         """
+        previous = self._devices
+        self._devices = {}
         self._merge_registry_sources()
         self._merge_entity_sources()
         self._merge_optional_discovery_sources()
+        for key, device in self._devices.items():
+            old = previous.get(key)
+            if old and old.ip == device.ip:
+                device.reachable = old.reachable
+                device.open_ports = old.open_ports.copy()
         return sorted(
-            (d.to_dict() for d in self._devices.values()),
+            (d.to_dict() for d in self._devices.values() if d.ip or d.mac or (include_non_network and d.kind != "service")),
             key=lambda r: (r.get("ip") or "zzz", r.get("name") or ""),
         )
 
@@ -153,6 +174,8 @@ class NetworkScanner:
             ports_tuple = tuple(int(p) for p in (ports or DEFAULT_PORTS) if 0 < int(p) < 65536)
             if not ports_tuple:
                 ports_tuple = DEFAULT_PORTS
+            if len(ports_tuple) > 12:
+                raise ValueError("At most 12 ports may be probed in one scan")
 
             targets: list[tuple[str, str]] = []  # (device_key, ip)
             for key, dev in self._devices.items():
@@ -240,6 +263,9 @@ class NetworkScanner:
             key = mac or ip or f"device:{d.id}"
             name = d.name_by_user or d.name or "Unknown"
             dev = self._ensure(key, name=name, source="device_registry")
+            dev.device_id = d.id
+            connection_types = {c[0] for c in d.connections if isinstance(c, (list, tuple)) and len(c) == 2}
+            dev.kind = "bluetooth" if "bluetooth" in connection_types else "zigbee" if "zigbee" in connection_types else "other" if connection_types else "service"
             if mac and not dev.mac:
                 dev.mac = mac
             if ip and not dev.ip:
@@ -254,6 +280,9 @@ class NetworkScanner:
     def _merge_entity_sources(self) -> None:
         # Pick up `device_tracker.*` entities that aren't already covered
         # by the device registry.
+        known_entities = {
+            entity_id: device for device in self._devices.values() for entity_id in device.entity_ids
+        }
         for state in self.hass.states.async_all("device_tracker"):
             attrs = state.attributes or {}
             ip = (
@@ -267,7 +296,8 @@ class NetworkScanner:
             )
             if not (ip or mac):
                 continue
-            key = mac or ip
+            registered = known_entities.get(state.entity_id)
+            key = registered.key if registered else mac or ip
             name = attrs.get("friendly_name") or state.entity_id.split(".")[1]
             dev = self._ensure(key, name=name, source="device_tracker")
             if ip and not dev.ip:

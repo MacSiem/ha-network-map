@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Default map now includes only MAC/IP devices; HACS repositories and service entries without connection evidence stay out. Optional filter includes explicit non-network connections.
+- Use the integration as the sole discovery source, avoiding duplicate browser tracker rows. Preserve reachability across list refreshes and remove stale registry rows.
+- Hide/unhide devices and override category using a stable registry ID in local browser storage. Link to HA device and entity pages.
+- A 600-entry registry fixture verifies that 50 addressed devices remain in the default view.
+
 ## 5.0.16 (2026-08-28)
 
 - Isolation: Bento CSS is component-local and cannot be captured from `window.HAToolsBentoCSS` by load order.
