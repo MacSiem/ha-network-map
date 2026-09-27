@@ -59,9 +59,10 @@ HA device and entity pages. These choices are stored in this browser's
 |---|---|
 | ![Devices tab, light theme](docs/screenshots/card-map-light.png) | ![Devices tab, dark theme](docs/screenshots/card-map-dark.png) |
 
-*The Devices tab: per-device reachability, MAC/IP, manufacturer and any bound
-HA entity. The Topology tab renders the same devices as a hub-and-spoke graph.
-Dark mode follows your Home Assistant theme automatically.*
+*The Devices tab: reachability summary, MAC/IP filter, manufacturer and device
+rows. The fixture uses TEST-NET addresses and invented device names; it does
+not show a real household network. The Topology tab renders the same devices
+as a hub-and-spoke graph. Dark mode follows your Home Assistant theme.*
 
 ## Installation
 

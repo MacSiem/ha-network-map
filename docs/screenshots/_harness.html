@@ -27,30 +27,30 @@
   const now = Date.now(); const h = 3600000;
 
   // Demo devices — shape matches scanner.Device.to_dict() as consumed by
-  // ha_network_map/list_devices. IPs/MACs are obviously fake demo values.
+  // ha_network_map/list_devices. Use TEST-NET addresses and locally administered MACs so published screenshots cannot resemble a real household network.
   const demoDevices = [
-    { key: 'aa:bb:cc:dd:ee:01', name: 'Living Room Router', ip: '192.168.1.1', mac: 'AA:BB:CC:DD:EE:01',
+    { key: '02:00:00:00:00:01', name: 'Living Room Router', ip: '192.0.2.1', mac: '02:00:00:00:00:01',
       manufacturer: 'Ubiquiti', model: 'UniFi Dream Machine', sources: ['device_registry'],
       entity_ids: [], reachable: true, open_ports: [443, 22] },
-    { key: '192.168.1.42', name: 'Kitchen MacBook', ip: '192.168.1.42', mac: 'AA:BB:CC:DD:EE:02',
+    { key: '192.0.2.42', name: 'Kitchen MacBook', ip: '192.0.2.42', mac: '02:00:00:00:00:02',
       manufacturer: 'Apple', model: 'MacBook Pro', sources: ['device_tracker'],
       entity_ids: ['device_tracker.kitchen_macbook'], reachable: true, open_ports: [] },
-    { key: '192.168.1.51', name: "Alex's iPhone", ip: '192.168.1.51', mac: 'AA:BB:CC:DD:EE:03',
+    { key: '192.0.2.51', name: "Demo Phone", ip: '192.0.2.51', mac: '02:00:00:00:00:03',
       manufacturer: 'Apple', model: 'iPhone 15', sources: ['device_tracker'],
-      entity_ids: ['device_tracker.alexs_iphone'], reachable: true, open_ports: [] },
-    { key: 'aa:bb:cc:dd:ee:04', name: 'Living Room iPad', ip: '192.168.1.52', mac: 'AA:BB:CC:DD:EE:04',
+      entity_ids: ['device_tracker.demo_phone'], reachable: true, open_ports: [] },
+    { key: '02:00:00:00:00:04', name: 'Living Room iPad', ip: '192.0.2.52', mac: '02:00:00:00:00:04',
       manufacturer: 'Apple', model: 'iPad Air', sources: ['device_registry'],
       entity_ids: [], reachable: false, open_ports: [] },
-    { key: 'aa:bb:cc:dd:ee:05', name: 'Front Door Camera', ip: '192.168.1.60', mac: 'AA:BB:CC:DD:EE:05',
+    { key: '02:00:00:00:00:05', name: 'Front Door Camera', ip: '192.0.2.60', mac: '02:00:00:00:00:05',
       manufacturer: 'Ubiquiti', model: 'G4 Doorbell', sources: ['device_registry'],
       entity_ids: [], reachable: true, open_ports: [554, 443] },
-    { key: 'aa:bb:cc:dd:ee:06', name: 'Living Room Lamp', ip: null, mac: 'AA:BB:CC:DD:EE:06',
+    { key: '02:00:00:00:00:06', name: 'Living Room Lamp', ip: null, mac: '02:00:00:00:00:06',
       manufacturer: 'IKEA', model: 'TRADFRI', sources: ['device_registry'],
       entity_ids: [], reachable: null, open_ports: [] },
-    { key: 'aa:bb:cc:dd:ee:07', name: 'Living Room TV', ip: '192.168.1.70', mac: 'AA:BB:CC:DD:EE:07',
+    { key: '02:00:00:00:00:07', name: 'Living Room TV', ip: '192.0.2.70', mac: '02:00:00:00:00:07',
       manufacturer: 'LG', model: 'OLED55', sources: ['device_registry'],
       entity_ids: [], reachable: true, open_ports: [8080] },
-    { key: '192.168.1.80', name: 'Guest Phone', ip: '192.168.1.80', mac: 'AA:BB:CC:DD:EE:08',
+    { key: '192.0.2.80', name: 'Guest Phone', ip: '192.0.2.80', mac: '02:00:00:00:00:08',
       manufacturer: 'Samsung', model: 'Galaxy S24', sources: ['device_tracker'],
       entity_ids: ['device_tracker.guest_phone'], reachable: false, open_ports: [] },
   ];
@@ -60,17 +60,17 @@
   const trackerStates = {
     'device_tracker.kitchen_macbook': {
       entity_id: 'device_tracker.kitchen_macbook', state: 'home',
-      attributes: { friendly_name: 'Kitchen MacBook', ip_address: '192.168.1.42', mac_address: 'AA:BB:CC:DD:EE:02', source_type: 'router' },
+      attributes: { friendly_name: 'Kitchen MacBook', ip_address: '192.0.2.42', mac_address: '02:00:00:00:00:02', source_type: 'router' },
       last_changed: new Date(now - 2 * h).toISOString(), last_updated: new Date(now - 2 * h).toISOString(),
     },
-    'device_tracker.alexs_iphone': {
-      entity_id: 'device_tracker.alexs_iphone', state: 'home',
-      attributes: { friendly_name: "Alex's iPhone", ip_address: '192.168.1.51', mac_address: 'AA:BB:CC:DD:EE:03', source_type: 'router' },
+    'device_tracker.demo_phone': {
+      entity_id: 'device_tracker.demo_phone', state: 'home',
+      attributes: { friendly_name: "Demo Phone", ip_address: '192.0.2.51', mac_address: '02:00:00:00:00:03', source_type: 'router' },
       last_changed: new Date(now - 0.2 * h).toISOString(), last_updated: new Date(now - 0.2 * h).toISOString(),
     },
     'device_tracker.guest_phone': {
       entity_id: 'device_tracker.guest_phone', state: 'not_home',
-      attributes: { friendly_name: 'Guest Phone', ip_address: '192.168.1.80', mac_address: 'AA:BB:CC:DD:EE:08', source_type: 'router' },
+      attributes: { friendly_name: 'Guest Phone', ip_address: '192.0.2.80', mac_address: '02:00:00:00:00:08', source_type: 'router' },
       last_changed: new Date(now - 20 * h).toISOString(), last_updated: new Date(now - 20 * h).toISOString(),
     },
   };
@@ -119,7 +119,7 @@
   };
 
   const card = document.getElementById('card');
-  card.setConfig({ type: 'custom:ha-network-map', title: 'Network Map', router_ip: '192.168.1.1' });
+  card.setConfig({ type: 'custom:ha-network-map', title: 'Network Map', router_ip: '192.0.2.1' });
   card.hass = hass;
   setTimeout(() => {
     card.hass = { ...hass };
