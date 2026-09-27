@@ -82,7 +82,8 @@ class FrontendRegistrationTests(unittest.TestCase):
         self.assertIn("const _esc = (s) => _escBase(_asText(s));", source)
         self.assertIn('data-source="own-card"', source)
         self.assertIn("buymeacoffee.com/macsiem", source)
-        self.assertIn("this.shadowRoot.innerHTML = html + ownDonateFooter();", source)
+        self.assertIn("this.shadowRoot.innerHTML = html + support;", source)
+        self.assertIn("this._hass?.user?.is_admin && this.config?.show_support !== false", source)
         for marker in ("SPLIT_TAGS", "deepFindAll", "injectAll", "__haToolsSplitDonateInjector", "window._haToolsEsc"):
             with self.subTest(marker=marker):
                 self.assertNotIn(marker, source)
