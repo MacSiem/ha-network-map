@@ -198,6 +198,8 @@ development:
 - [Buy Me a Coffee](https://buymeacoffee.com/macsiem)
 - [PayPal](https://www.paypal.com/donate/?hosted_button_id=Y967H4PLRBN8W)
 
+The card shows a small support link to administrators. It can be dismissed in the browser or hidden with `show_support: false` in the card configuration.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

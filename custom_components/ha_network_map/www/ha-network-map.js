@@ -6,7 +6,9 @@
 const _asText = (s) => String(s ?? '');
 const _escBase = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const _esc = (s) => _escBase(_asText(s));
-const ownDonateFooter = () => `<style>.donate-section{margin:24px 12px 4px;padding:20px 24px;background:linear-gradient(135deg,rgba(99,102,241,.06),rgba(236,72,153,.06));border:1px solid rgba(99,102,241,.18);border-radius:18px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:18px}.donate-section h3{margin:0 0 6px}.donate-section p{margin:0}.donate-buttons{display:flex;gap:10px;flex-wrap:wrap}.donate-btn{display:inline-flex;padding:10px 18px;border-radius:12px;font-weight:700;text-decoration:none}.donate-btn.coffee{background:#ffdd00;color:#000}.donate-btn.paypal{background:#0070ba;color:#fff}</style><section class="donate-section" data-source="own-card"><div><h3>❤️ Support HA Tools Development</h3><p>If this tool makes your Home Assistant life easier, consider supporting the project.</p></div><div class="donate-buttons"><a class="donate-btn coffee" href="https://buymeacoffee.com/macsiem" target="_blank" rel="noopener noreferrer">☕ Buy Me a Coffee</a><a class="donate-btn paypal" href="https://www.paypal.com/donate/?hosted_button_id=Y967H4PLRBN8W" target="_blank" rel="noopener noreferrer">💳 PayPal</a></div></section>`;
+const SUPPORT_DISMISSED_KEY = 'ha-network-map-support-dismissed';
+const supportDismissed = () => { try { return localStorage.getItem(SUPPORT_DISMISSED_KEY) === '1'; } catch (_) { return false; } };
+const ownDonateFooter = () => `<section class="donate-section" data-source="own-card" style="margin:8px 12px;padding:8px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px"><span>❤️ Support HA Tools:</span><a href="https://buymeacoffee.com/macsiem" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a><button type="button" class="support-dismiss" aria-label="Dismiss support link" style="margin-left:auto">×</button></section>`;
 
 /* ===== HA Tools split — inline shared infrastructure ===== */
 // Bento Design System CSS (inline copy — keeps tool standalone)
@@ -615,6 +617,7 @@ class HaNetworkMap extends HTMLElement {
     this.config = config;
     this._title = config.title || 'Network Map';
     this._routerIp = config.router_ip || '192.168.1.1';
+    this._lastHtml = '';
   }
 
   set hass(hass) {
@@ -995,7 +998,8 @@ class HaNetworkMap extends HTMLElement {
       content +
       '</div>';
 
-    if (this._lastHtml === html) return;
+    const support = this._hass?.user?.is_admin && this.config?.show_support !== false && !supportDismissed() ? ownDonateFooter() : '';
+    if (this._lastHtml === html + support) return;
     // Preserve focus + caret across the full innerHTML rebuild so typing in an
     // input (search / subnet / config) survives data-driven re-renders instead
     // of dropping a character per refresh.
@@ -1003,8 +1007,8 @@ class HaNetworkMap extends HTMLElement {
     const _fid = _ae && _ae.id;
     let _ss = null, _se = null;
     try { if (_ae) { _ss = _ae.selectionStart; _se = _ae.selectionEnd; } } catch (e) {}
-    this._lastHtml = html;
-    this.shadowRoot.innerHTML = html + ownDonateFooter();
+    this._lastHtml = html + support;
+    this.shadowRoot.innerHTML = html + support;
     this._bindEvents();
     if (_fid) {
       const _el = this.shadowRoot.getElementById(_fid);
@@ -1431,6 +1435,10 @@ class HaNetworkMap extends HTMLElement {
   }
 
   _bindEvents() {
+    this.shadowRoot.querySelector('.support-dismiss')?.addEventListener('click', () => {
+      try { localStorage.setItem(SUPPORT_DISMISSED_KEY, '1'); } catch (_) {}
+      this._doRender();
+    });
     // Tab switching
     this.shadowRoot.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
