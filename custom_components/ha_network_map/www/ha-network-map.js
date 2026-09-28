@@ -1765,7 +1765,7 @@ class HaNetworkMap extends HTMLElement {
 
   getCardSize() { return 8; }
 
-  getGridOptions() { return { rows: 10, columns: 12, min_rows: 3, min_columns: 6 }; }
+  getGridOptions() { return { columns: 12, min_rows: 3, min_columns: 6 }; }
   static getConfigElement() { return document.createElement('ha-network-map-editor'); }
   static getStubConfig() {
     return { type: 'custom:ha-network-map', title: 'Network Map', router_ip: '192.168.1.1' };
