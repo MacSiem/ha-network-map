@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 5.0.17 (2026-09-29)
 
 - Register one storage-mode Lovelace resource and an administrator-only sidebar panel; preserve an existing HACS resource, refresh the owned resource on upgrade and remove owned UI entries on unload. YAML mode keeps the frontend fallback.
 - Require Home Assistant 2025.2 for Lovelace resource and panel APIs.
