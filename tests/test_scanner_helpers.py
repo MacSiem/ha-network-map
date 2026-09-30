@@ -233,5 +233,37 @@ class RegistryDiscoveryTests(unittest.TestCase):
             dr.async_get, er.async_get = old_dr, old_er
 
 
+class AddressValidationTests(unittest.TestCase):
+    def test_mac_requires_hex_digits_not_arbitrary_pairs_or_text(self):
+        self.assertIsNone(_normalize_mac("zz:zz:zz:zz:zz:zz"))
+        self.assertIsNone(_normalize_mac("prefix aabbccddeeff suffix"))
+
+    def test_configuration_url_requires_an_actual_ip_literal(self):
+        self.assertIsNone(_ip_from_url("http://999.999.999.999/status"))
+        self.assertIsNone(_ip_from_url("http://example.test/status/192.168.1.5"))
+        self.assertEqual(_ip_from_url("http://[fd00::5]:8123/status"), "fd00::5")
+
+    def test_default_tracker_list_rejects_bare_mac_mislabeled_ip_and_invalid_hosts(self):
+        states = [types.SimpleNamespace(entity_id="device_tracker." + name, attributes=attrs)
+                  for name, attrs in [
+                      ("hex_as_ip", {"ip_address": "24a16012879b"}),
+                      ("hostname", {"ip_address": "example.local"}),
+                      ("invalid_mac", {"mac_address": "zz:zz:zz:zz:zz:zz"}),
+                      ("valid_v4", {"ip_address": "192.0.2.5"}),
+                      ("valid_v6", {"ip_address": "fd00::5"}),
+                  ]]
+        fake_hass = types.SimpleNamespace(data={}, states=types.SimpleNamespace(async_all=lambda domain: states))
+        dr = sys.modules["homeassistant.helpers.device_registry"]
+        er = sys.modules["homeassistant.helpers.entity_registry"]
+        old_dr, old_er = dr.async_get, er.async_get
+        dr.async_get = lambda hass: types.SimpleNamespace(devices={})
+        er.async_get = lambda hass: types.SimpleNamespace(entities={})
+        try:
+            rows = asyncio.run(scanner.NetworkScanner(fake_hass).list_devices())
+            self.assertEqual({row["ip"] for row in rows}, {"192.0.2.5", "fd00::5"})
+        finally:
+            dr.async_get, er.async_get = old_dr, old_er
+
+
 if __name__ == "__main__":
     unittest.main()
