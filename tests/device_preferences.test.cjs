@@ -21,7 +21,7 @@ test('stable device ID keeps category and hidden choice when IP changes', () => 
     assert.equal(card.devices[0].category, 'Computer');
     assert.equal(card.devices[0].preferenceId, 'device:stable-id');
     assert.match(card._renderDeviceDetail(card.devices[0]), /config\/devices\/device\/stable-id/);
-    assert.match(card._renderDeviceDetail(card.devices[0]), /config\/entities\/entity\/device_tracker.router/);
+    assert.match(card._renderDeviceDetail(card.devices[0]), /id="openEntity" data-entity="device_tracker.router"/);
   } finally { dom.window.close(); }
 });
 

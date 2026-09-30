@@ -1114,7 +1114,7 @@ class HaNetworkMap extends HTMLElement {
     const categories = ['Phone', 'Tablet', 'Computer', 'Router', 'Camera', 'Smart Home', 'Media', 'Other'];
     const categorySelect = '<label>' + this._t('category') + ' <select id="deviceCategory">' + categories.map(c => '<option value="' + c + '"' + (d.category === c ? ' selected' : '') + '>' + c + '</option>').join('') + '</select></label>';
     const links = (d.device_id ? '<a href="/config/devices/device/' + encodeURIComponent(d.device_id) + '">' + this._t('openDevice') + '</a> ' : '') +
-      (d.entity_id ? '<a href="/config/entities/entity/' + encodeURIComponent(d.entity_id) + '">' + this._t('openEntity') + '</a>' : '');
+      (d.entity_id ? '<button type="button" class="rb" id="openEntity" data-entity="' + _esc(d.entity_id) + '">' + this._t('openEntity') + '</button>' : '');
     const hidden = !!this._devicePrefs[d.preferenceId]?.hidden;
 
     return '<div class="dd" id="dD"><button class="dc" id="cD">✕ ' + this._t('close') + '</button><div style="clear:both"></div>' +
@@ -1453,6 +1453,15 @@ class HaNetworkMap extends HTMLElement {
         this._doRender();
       });
     });
+
+    const openEntity = this.shadowRoot.querySelector('#openEntity');
+    if (openEntity) {
+      openEntity.addEventListener('click', () => {
+        this.dispatchEvent(new CustomEvent('hass-more-info', {
+          detail: { entityId: openEntity.dataset.entity }, bubbles: true, composed: true
+        }));
+      });
+    }
 
     // Rescan button
     const rescanBtn = this.shadowRoot.querySelector('#rescanBtn');
