@@ -24,6 +24,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Iterable
+from urllib.parse import urlsplit
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -94,24 +95,38 @@ def _is_private_ip(ip_str: str) -> bool:
 
 
 def _normalize_mac(value: str | None) -> str | None:
-    if not value or not isinstance(value, str):
+    if not isinstance(value, str):
         return None
-    cleaned = value.lower().replace("-", ":").strip()
-    parts = cleaned.split(":")
-    if len(parts) == 6 and all(len(p) == 2 for p in parts):
+    cleaned = value.lower().strip().replace("-", ":")
+    if re.fullmatch(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}", cleaned):
         return cleaned
-    # Some integrations store MACs without separators (e.g. "aabbccddeeff").
-    digits = "".join(c for c in cleaned if c in "0123456789abcdef")
-    if len(digits) == 12:
-        return ":".join(digits[i : i + 2] for i in range(0, 12, 2))
+    if re.fullmatch(r"[0-9a-f]{12}", cleaned):
+        return ":".join(cleaned[i:i + 2] for i in range(0, 12, 2))
+    if re.fullmatch(r"(?:[0-9a-f]{4}\.){2}[0-9a-f]{4}", cleaned):
+        return _normalize_mac(cleaned.replace(".", ""))
     return None
 
 
-def _ip_from_url(value: str | None) -> str | None:
-    if not value:
+def _normalize_ip(value: Any) -> str | None:
+    if not isinstance(value, str):
         return None
-    match = _IPV4_RE.search(value)
-    return match.group(1) if match else None
+    try:
+        return str(ipaddress.ip_address(value.strip()))
+    except ValueError:
+        return None
+
+
+def _ip_from_url(value: str | None) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    literal = _normalize_ip(value)
+    if literal:
+        return literal
+    try:
+        host = urlsplit(value if "://" in value else "//" + value).hostname
+    except ValueError:
+        return None
+    return _normalize_ip(host)
 
 
 class NetworkScanner:
@@ -285,7 +300,7 @@ class NetworkScanner:
         }
         for state in self.hass.states.async_all("device_tracker"):
             attrs = state.attributes or {}
-            ip = (
+            ip = _normalize_ip(
                 attrs.get("ip_address")
                 or attrs.get("ip")
                 or attrs.get("local_ip")
@@ -318,7 +333,7 @@ class NetworkScanner:
                     flat: list[str] = []
                     for vlist in addresses.values():
                         flat.extend(vlist or [])
-                    ip = next((a for a in flat if "." in a), None)
+                    ip = next((valid for a in flat if (valid := _normalize_ip(a))), None)
                     name = getattr(info, "name", None) or "zeroconf"
                     if ip:
                         dev = self._ensure(ip, name=name, source="zeroconf")
@@ -330,11 +345,14 @@ class NetworkScanner:
         dhcp_state = self.hass.data.get("dhcp")
         if dhcp_state and hasattr(dhcp_state, "address_data"):
             try:
-                for ip, info in list(getattr(dhcp_state, "address_data", {}).items())[:200]:
+                for address, info in list(getattr(dhcp_state, "address_data", {}).items())[:200]:
+                    ip = _normalize_ip(address)
                     mac = _normalize_mac(info.get("macaddress") if isinstance(info, dict) else None)
                     hostname = info.get("hostname") if isinstance(info, dict) else None
+                    if not (mac or ip):
+                        continue
                     key = mac or ip
-                    dev = self._ensure(key, name=hostname or ip, source="dhcp")
+                    dev = self._ensure(key, name=hostname or ip or mac, source="dhcp")
                     if not dev.ip:
                         dev.ip = ip
                     if mac and not dev.mac:
