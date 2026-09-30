@@ -7,6 +7,8 @@
 - Default map now includes only MAC/IP devices; HACS repositories and service entries without connection evidence stay out. Optional filter includes explicit non-network connections.
 - Use the integration as the sole discovery source, avoiding duplicate browser tracker rows. Preserve reachability across list refreshes and remove stale registry rows.
 - Hide/unhide devices and override category using a stable registry ID in local browser storage. Link to HA device and entity pages.
+- Keep dense topology nodes and category summaries inside the canvas, limit visible nodes to 24, and expose full names through hover/focus labels instead of overlapping text.
+- Leave gateway IP optional instead of inventing a default router address; empty topology points to registry/filter setup.
 - A 600-entry registry fixture verifies that 50 addressed devices remain in the default view.
 
 ## 5.0.16 (2026-08-28)

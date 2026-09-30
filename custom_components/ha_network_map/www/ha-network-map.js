@@ -513,7 +513,7 @@ class HaNetworkMap extends HTMLElement {
     this._hass = null;
     this.activeTab = 'devices';
     this._title = 'Network Map';
-    this._routerIp = '192.168.1.1';
+    this._routerIp = '';
     this.config = {};
 
     // Data
@@ -616,7 +616,7 @@ class HaNetworkMap extends HTMLElement {
   setConfig(config) {
     this.config = config;
     this._title = config.title || 'Network Map';
-    this._routerIp = config.router_ip || '192.168.1.1';
+    this._routerIp = typeof config.router_ip === 'string' ? config.router_ip.trim() : '';
     this._lastHtml = '';
   }
 
@@ -1127,10 +1127,10 @@ class HaNetworkMap extends HTMLElement {
       return '<div class="es" style="padding:60px 20px;">' +
         '<div style="font-size:40px;margin-bottom:12px;">🔍</div>' +
         '<div style="font-weight:600;font-size:15px;margin-bottom:6px;color:var(--bento-text);">' +
-        (this._lang === 'pl' ? 'Brak urządzeń w topologii' : 'Run a scan to see the topology') +
+        (this._lang === 'pl' ? 'Brak urządzeń w topologii' : 'No registry devices in the map') +
         '</div>' +
         '<div style="font-size:12px;color:var(--bento-text-secondary);">' +
-        (this._lang === 'pl' ? 'Kliknij Skanuj, aby wykryć urządzenia w sieci.' : 'Click Rescan to discover devices on your network.') +
+        (this._lang === 'pl' ? 'Sprawdź integrację i filtry urządzeń.' : 'Check the integration and device filters.') +
         '</div></div>';
     }
 
@@ -1148,8 +1148,8 @@ class HaNetworkMap extends HTMLElement {
     const COLOR_UNREACHABLE_FILL   = 'var(--bento-text-muted)';
     const COLOR_UNREACHABLE_STROKE = 'var(--bento-border)';
 
-    // ── Clutter handling: cap at 40 visible device nodes ────────────────────
-    const MAX_NODES = 40;
+    // ── Clutter handling: cap at 24 visible device nodes ────────────────────
+    const MAX_NODES = 24;
     let deviceNodes = this.devices.slice();
     let groupNodes  = [];
 
@@ -1174,12 +1174,12 @@ class HaNetworkMap extends HTMLElement {
 
     // ── SVG canvas geometry ──────────────────────────────────────────────────
     // viewBox 800×520 — scales to card width via CSS width:100%.
-    // Inner ring (r=180): individual device nodes.
-    // Outer ring (r=290): category summary nodes when >40 devices.
+    // Inner ring (r=155): individual device nodes.
+    // Outer ring (r=210): category summary nodes when >40 devices.
     const VW = 800, VH = 520;
     const cx = VW / 2, cy = VH / 2;
-    const INNER_R   = 180;
-    const OUTER_R   = 290;
+    const INNER_R   = 155;
+    const OUTER_R   = 210;
     const NODE_R    = 18;
     const HUB_R     = 28;
     const SUMMARY_R = 22;
@@ -1241,6 +1241,7 @@ class HaNetworkMap extends HTMLElement {
       const stroke   = isUnreach ? COLOR_UNREACHABLE_STROKE : catColor.stroke;
       const fillOp   = isUnreach ? '0.08' : '0.18';
 
+      svg += '<g tabindex="0" role="img" aria-label="' + _esc(d.name || d.ip || '') + '"><title>' + _esc(d.name || d.ip || '') + '</title>';
       svg += '<circle cx="' + d._x + '" cy="' + d._y + '" r="' + NODE_R + '"' +
         ' fill="' + fill + '" fill-opacity="' + fillOp + '"' +
         ' stroke="' + stroke + '" stroke-width="' + (isReach ? '2' : '1.5') + '"' +
@@ -1252,6 +1253,8 @@ class HaNetworkMap extends HTMLElement {
         ' font-size="13" font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif">' +
         _esc(d.icon || '📡') + '</text>';
 
+      // Dense maps use full hover/focus names instead of overlapping labels.
+      if (total <= 12) {
       // Name label below node (max 12 chars)
       const label = String(d.name || d.ip || '').substring(0, 12);
       svg += '<text x="' + d._x + '" y="' + (d._y + NODE_R + 11) + '"' +
@@ -1259,6 +1262,7 @@ class HaNetworkMap extends HTMLElement {
         ' font-family="Inter,SF Pro,system-ui,sans-serif"' +
         ' fill="var(--bento-text-secondary)" font-weight="500">' +
         _esc(label) + '</text>';
+      }
 
       // Reachability dot (top-right quadrant of node)
       if (d.reachable === true || d.reachable === false) {
@@ -1266,6 +1270,7 @@ class HaNetworkMap extends HTMLElement {
         svg += '<circle cx="' + (d._x + NODE_R * 0.7) + '" cy="' + (d._y - NODE_R * 0.7) + '"' +
           ' r="4.5" fill="' + dotColor + '" stroke="var(--bento-card)" stroke-width="1.5"/>';
       }
+      svg += '</g>';
     });
 
     // Summary group nodes (outer ring)
@@ -1290,7 +1295,7 @@ class HaNetworkMap extends HTMLElement {
     svg += '<text x="' + cx + '" y="' + cy + '"' +
       ' text-anchor="middle" dominant-baseline="central"' +
       ' font-size="18" font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif">📡</text>';
-    const routerLabel = this._routerIp || 'Router';
+    const routerLabel = this._routerIp || (this._lang === 'pl' ? 'Mapa urządzeń' : 'Device map');
     svg += '<text x="' + cx + '" y="' + (cy + HUB_R + 12) + '"' +
       ' text-anchor="middle" font-size="9.5" font-weight="600"' +
       ' font-family="SF Mono,Fira Code,monospace" fill="var(--bento-primary)">' +
@@ -1319,7 +1324,7 @@ class HaNetworkMap extends HTMLElement {
     }
     if (clipped > 0) {
       legend += '<span style="margin-left:auto;font-style:italic;">' +
-        (this._lang === 'pl' ? 'Pokazano 40 z ' + this.devices.length : 'Showing 40 of ' + this.devices.length + ' devices') +
+        (this._lang === 'pl' ? 'Pokazano ' + MAX_NODES + ' z ' + this.devices.length : 'Showing ' + MAX_NODES + ' of ' + this.devices.length + ' devices') +
         '</span>';
     }
     legend += '</div>';
@@ -1768,7 +1773,7 @@ class HaNetworkMap extends HTMLElement {
   getGridOptions() { return { columns: 12, min_rows: 3, min_columns: 6 }; }
   static getConfigElement() { return document.createElement('ha-network-map-editor'); }
   static getStubConfig() {
-    return { type: 'custom:ha-network-map', title: 'Network Map', router_ip: '192.168.1.1' };
+    return { type: 'custom:ha-network-map', title: 'Network Map' };
   }
 }
 
@@ -1819,7 +1824,7 @@ class HaNetworkMapEditor extends HTMLElement {
       </div>
       <div>
         <label>Router IP</label>
-        <input type="text" id="cf_router_ip" value="${_esc(this._config?.router_ip || '192.168.1.1')}">
+        <input type="text" id="cf_router_ip" value="${_esc(this._config?.router_ip || '')}">
       
         </div>
     `;

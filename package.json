@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "test:smoke": "node .github/smoke.cjs"
+    "test:smoke": "node .github/smoke.cjs && node --test tests/*.test.cjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
