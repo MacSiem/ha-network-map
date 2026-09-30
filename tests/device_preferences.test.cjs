@@ -51,3 +51,27 @@ test('device details have a native keyboard button and return focus on close', (
     assert.match(card.shadowRoot.activeElement.textContent, /Keyboard router/);
   } finally { dom.window.close(); }
 });
+
+
+test('entity details open HA more-info for state-only entities without a registry entry', () => {
+  const dom = new JSDOM('', { runScripts: 'dangerously', url: 'http://localhost/' });
+  try {
+    dom.window.eval(readFileSync(join(__dirname, '..', 'custom_components/ha_network_map/www/ha-network-map.js'), 'utf8'));
+    const card = dom.window.document.createElement('ha-network-map');
+    dom.window.document.body.appendChild(card);
+    card._hass = { states: { 'device_tracker.state_only': { state: 'home' } }, user: { is_admin: false } };
+    card.activeTab = 'devices';
+    card._integrationDevices = [{ key: 'state-only', name: 'State only tracker', mac: '02:00:00:00:00:01', entity_ids: ['device_tracker.state_only'] }];
+    card._buildDeviceList();
+    card.selectedDevice = card.devices[0];
+    card._doRender();
+    let event = null;
+    dom.window.document.body.addEventListener('hass-more-info', e => { event = e; });
+    const button = card.shadowRoot.querySelector('#openEntity');
+    assert.ok(button, 'State-only entities must use HA more-info, not a non-existent configuration editor');
+    button.click();
+    assert.equal(event?.detail.entityId, 'device_tracker.state_only');
+    assert.equal(event.composed, true);
+    assert.equal(event.bubbles, true);
+  } finally { dom.window.close(); }
+});
