@@ -1069,7 +1069,7 @@ class HaNetworkMap extends HTMLElement {
     let rows = '';
     items.forEach((d, i) => {
       const dot = d.reachable === true ? '<span style="color:#10B981">\u25CF</span>' : d.reachable === false ? '<span style="color:#EF4444">\u25CF</span>' : '<span style="color:#94A3B8">\u2014</span>';
-      rows += '<tr data-i="' + i + '"><td><span class="di">' + _esc(d.icon) + '</span><span class="dn">' + _esc(d.name) + '</span></td>' +
+      rows += '<tr data-i="' + i + '"><td><button type="button" class="device-detail-button"><span class="di" aria-hidden="true">' + _esc(d.icon) + '</span><span class="dn">' + _esc(d.name) + '</span></button></td>' +
         '<td>' + _esc(d.category) + '</td>' +
         '<td class="mn">' + _esc(d.ip || '—') + '</td>' +
         '<td class="mn">' + _esc(d.mac || '—') + '</td>' +
@@ -1530,14 +1530,23 @@ class HaNetworkMap extends HTMLElement {
         const ps = (this._currentPage - 1) * this._pageSize;
         this.selectedDevice = this.filteredDevices[ps + idx];
         this._doRender();
+        this.shadowRoot.querySelector('#cD')?.focus();
       });
     });
 
     const cD = this.shadowRoot.querySelector('#cD');
     if (cD) {
       cD.addEventListener('click', () => {
+        const preferenceId = this.selectedDevice?.preferenceId;
         this.selectedDevice = null;
         this._doRender();
+        const index = this.filteredDevices.findIndex(d => d.preferenceId === preferenceId);
+        const pageStart = (this._currentPage - 1) * this._pageSize;
+        if (index >= pageStart && index < pageStart + this._pageSize) {
+          this.shadowRoot.querySelector('tr[data-i="' + (index - pageStart) + '"] .device-detail-button')?.focus();
+        } else {
+          this.shadowRoot.querySelector('#sI')?.focus();
+        }
       });
     }
 
@@ -1706,6 +1715,7 @@ class HaNetworkMap extends HTMLElement {
     'tr:hover td { background: rgba(59,130,246,.04); }' +
     'tr { cursor: pointer; }' +
     '.di { font-size: 16px; margin-right: 4px; vertical-align: middle; }' +
+    '.device-detail-button { padding: 4px 2px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }' +
     '.dn { font-weight: 500; }' +
     '.ds { font-size: 11px; color: var(--bento-text-muted); }' +
     '.mn { font-family: "SF Mono", monospace; font-size: 12px; color: var(--bento-text-secondary); }' +
