@@ -65,3 +65,13 @@ test('scan stays disabled before user permissions are known', () => {
     assert.equal(card.shadowRoot.querySelector('#rescanBtn').disabled, true);
   } finally { dom.window.close(); }
 });
+
+test('server scan errors remain plain text in the card', () => {
+  const { dom, card } = fixture(true);
+  try {
+    card._scanError = '<img src=x onerror="window.scanErrorExecuted=true">';
+    card._doRender();
+    assert.equal(card.shadowRoot.querySelector('img'), null);
+    assert.ok(card.shadowRoot.textContent.includes(card._scanError));
+  } finally { dom.window.close(); }
+});

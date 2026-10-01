@@ -2,6 +2,8 @@
 
 ## 5.0.17 (2026-09-29)
 
+- Keep the existing device map readable for household users, disable administrator-only network scans with English/Polish guidance, and reject direct scan attempts before a server request. Render scan errors as text.
+
 - Validate IP literals and MAC hex digits before classifying network devices; URL paths and mislabeled tracker hostnames are not addresses. IPv6 configuration URLs are supported.
 
 - Register one storage-mode Lovelace resource and an administrator-only sidebar panel; preserve an existing HACS resource, refresh the owned resource on upgrade and remove owned UI entries on unload. YAML mode keeps the frontend fallback.

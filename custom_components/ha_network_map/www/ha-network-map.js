@@ -558,6 +558,7 @@ class HaNetworkMap extends HTMLElement {
         unreachableCount: 'Unreachable', boundCount: 'Bound to HA',
         noDevicesFound: 'No devices found. Start a network scan.',
         scanningNetwork: 'Scanning network...', scanProgress: 'Progress',
+        scanAdminRequired: 'Only an administrator can start a network scan.',
         // Topology tab
         networkTopology: 'Network Topology', router: 'Router', gateway: 'Gateway',
         // Subnets tab
@@ -586,6 +587,7 @@ class HaNetworkMap extends HTMLElement {
         unreachableCount: 'Niedostępne', boundCount: 'Powiązane z HA',
         noDevicesFound: 'Brak urządzeń. Uruchom skanowanie sieci.',
         scanningNetwork: 'Skanowanie sieci...', scanProgress: 'Postęp',
+        scanAdminRequired: 'Tylko administrator może uruchomić skanowanie sieci.',
         // Topology tab
         networkTopology: 'Topologia sieci', router: 'Router', gateway: 'Brama',
         // Subnets tab
@@ -776,6 +778,10 @@ class HaNetworkMap extends HTMLElement {
     await this._scanAllSubnets();
   }
 
+  _canScan() {
+    return this._hass?.user?.is_admin === true;
+  }
+
   async _scanAllSubnets() {
     // v5: delegate to the bundled Python integration's server-side scan.
     // The previous browser-side path (per-IP fetch() HEAD probes against
@@ -789,7 +795,7 @@ class HaNetworkMap extends HTMLElement {
     // The Python integration handles all three: probes run from the HA
     // host (always the home LAN), use a smart-home port set, and skip
     // public IPs by default.
-    if (this._scanInProgress) return;
+    if (this._scanInProgress || !this._canScan()) return;
     if (!this._hass) {
       this._scanError = this._integrationMissingHint();
       this._doRender();
@@ -986,7 +992,7 @@ class HaNetworkMap extends HTMLElement {
       '<div class="card-header">📡 ' + this._title + '</div>' +
       '<div class="header-footer">' +
       (this._lastScanTime ? '<span style="font-size:11px;color:var(--bento-text-secondary);">Scanned: ' + new Date(this._lastScanTime).toLocaleTimeString() + '</span>' : '') +
-      '<button class="rb" id="rescanBtn">🔄 ' + (this._lang === 'pl' ? 'Skanuj' : 'Rescan') + '</button>' +
+      '<button class="rb" id="rescanBtn"' + (!this._canScan() || this._scanInProgress ? ' disabled' : '') + '>🔄 ' + (this._lang === 'pl' ? 'Skanuj' : 'Rescan') + '</button>' +
       '</div>' +
       '</div>' +
       '<div class="tabs">' +
@@ -994,7 +1000,8 @@ class HaNetworkMap extends HTMLElement {
       '<button class="tab-btn ' + (this.activeTab === 'topology' ? 'active' : '') + '" data-tab="topology">' + this._t('topologyTab') + '</button>' +
       '<button class="tab-btn ' + (this.activeTab === 'bindings' ? 'active' : '') + '" data-tab="bindings">' + this._t('bindingsTab') + '</button>' +
       '</div>' +
-      (this._scanError ? '<div style="margin:8px 12px;padding:10px 14px;background:var(--bento-error-light);color:var(--bento-error);border:1px solid var(--bento-error-border);border-radius:var(--bento-radius-sm);font-size:13px;">⚠️ ' + this._scanError + '</div>' : '') +
+      (!this._canScan() ? '<div role="status" style="margin:8px 12px;padding:10px 14px;font-size:13px;">' + _esc(this._t('scanAdminRequired')) + '</div>' : '') +
+      (this._scanError ? '<div style="margin:8px 12px;padding:10px 14px;background:var(--bento-error-light);color:var(--bento-error);border:1px solid var(--bento-error-border);border-radius:var(--bento-radius-sm);font-size:13px;">⚠️ ' + _esc(this._scanError) + '</div>' : '') +
       content +
       '</div>';
 
@@ -1371,7 +1378,7 @@ class HaNetworkMap extends HTMLElement {
     h += '<div style="margin-top:16px"><div style="display:flex;gap:8px">' +
       '<input type="text" class="si" id="subnetInput" placeholder="' + this._t('addSubnetLabel') + '" style="flex:1">' +
       '<button class="rb" id="addSubnetBtn">' + (this._lang === 'pl' ? 'Dodaj' : 'Add') + '</button>' +
-      '<button class="rb" id="rescanSubnetBtn">🔄 ' + this._t('rescanAll') + '</button>' +
+      '<button class="rb" id="rescanSubnetBtn"' + (!this._canScan() || this._scanInProgress ? ' disabled' : '') + '>🔄 ' + this._t('rescanAll') + '</button>' +
       '</div></div>';
 
     return h + '</div>';
