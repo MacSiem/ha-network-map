@@ -2,6 +2,8 @@
 
 ## 5.0.17 (2026-09-29)
 
+- Show the full topology device name when navigating with the keyboard, and expose individual named nodes to accessibility tools instead of treating the entire diagram as one image.
+
 - Keep the existing device map readable for household users, disable administrator-only network scans with English/Polish guidance, and reject direct scan attempts before a server request. Render scan errors as text.
 
 - Validate IP literals and MAC hex digits before classifying network devices; URL paths and mislabeled tracker hostnames are not addresses. IPv6 configuration URLs are supported.

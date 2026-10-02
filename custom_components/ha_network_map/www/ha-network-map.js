@@ -1209,7 +1209,7 @@ class HaNetworkMap extends HTMLElement {
     let svg = '<svg viewBox="0 0 ' + VW + ' ' + VH + '" xmlns="http://www.w3.org/2000/svg"' +
       ' style="width:100%;display:block;background:var(--bento-bg);' +
       'border:1px solid var(--bento-border);border-radius:var(--bento-radius-sm);"' +
-      ' role="img" aria-label="Network topology graph">';
+      ' role="group" aria-label="Network topology graph">';
 
     // Defs: hub glow gradient
     svg += '<defs>' +
@@ -1351,7 +1351,10 @@ class HaNetworkMap extends HTMLElement {
     });
     catKey += '</div>';
 
-    return svg + legend + catKey;
+    const focusedName = '<div class="topology-node-name" role="status" aria-live="polite"' +
+      ' style="min-height:1.4em;margin-top:8px;font-size:13px;overflow-wrap:anywhere;color:var(--bento-text-secondary)">' +
+      (this._lang === 'pl' ? 'Przejdź klawiszem Tab do urządzenia, aby zobaczyć pełną nazwę.' : 'Use Tab to show a device’s full name.') + '</div>';
+    return svg + focusedName + legend + catKey;
   }
   _renderSubnetsTab() {
     let h = '<div class="tree-view">';
@@ -1447,6 +1450,14 @@ class HaNetworkMap extends HTMLElement {
   }
 
   _bindEvents() {
+    this.shadowRoot.querySelectorAll('svg g[tabindex="0"]').forEach(node => {
+      const showName = () => {
+        const label = this.shadowRoot.querySelector('.topology-node-name');
+        if (label) label.textContent = node.getAttribute('aria-label') || '';
+      };
+      node.addEventListener('focus', showName);
+      node.addEventListener('mouseover', showName);
+    });
     this.shadowRoot.querySelector('.support-dismiss')?.addEventListener('click', () => {
       try { localStorage.setItem(SUPPORT_DISMISSED_KEY, '1'); } catch (_) {}
       this._doRender();
