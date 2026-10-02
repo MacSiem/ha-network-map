@@ -574,7 +574,7 @@ class HaNetworkMap extends HTMLElement {
         // Detail
         details: 'Details', bind: 'Bind', unbind: 'Unbind', close: 'Close',
         category: 'Category', status: 'Status', lastSeen: 'Last Seen',
-        showOtherDevices: 'Show devices without MAC/IP', hideDevice: 'Hide device', showHidden: 'Show hidden',
+        showOtherDevices: 'Show devices without MAC/IP', hideDevice: 'Hide device', showDevice: 'Show device', showHidden: 'Show hidden',
         openDevice: 'Open HA device', openEntity: 'Open HA entity',
       },
       pl: {
@@ -603,7 +603,7 @@ class HaNetworkMap extends HTMLElement {
         // Detail
         details: 'Szczegóły', bind: 'Powiąż', unbind: 'Rozpowiąż', close: 'Zamknij',
         category: 'Kategoria', status: 'Stan', lastSeen: 'Ostatnio widoczne',
-        showOtherDevices: 'Pokaż urządzenia bez MAC/IP', hideDevice: 'Ukryj urządzenie', showHidden: 'Pokaż ukryte',
+        showOtherDevices: 'Pokaż urządzenia bez MAC/IP', hideDevice: 'Ukryj urządzenie', showDevice: 'Pokaż urządzenie', showHidden: 'Pokaż ukryte',
         openDevice: 'Otwórz urządzenie HA', openEntity: 'Otwórz encję HA',
       }
     };
@@ -1125,7 +1125,7 @@ class HaNetworkMap extends HTMLElement {
     const hidden = !!this._devicePrefs[d.preferenceId]?.hidden;
 
     return '<div class="dd" id="dD"><button class="dc" id="cD">✕ ' + this._t('close') + '</button><div style="clear:both"></div>' +
-      rh + '<div style="margin-top:12px">' + categorySelect + ' <button class="rb" id="hideDevice">' + (hidden ? this._t('showHidden') : this._t('hideDevice')) + '</button> ' + links + ' ' + bindHtml + '</div></div>';
+      rh + '<div style="margin-top:12px">' + categorySelect + ' <button class="rb" id="hideDevice">' + (hidden ? this._t('showDevice') : this._t('hideDevice')) + '</button> ' + links + ' ' + bindHtml + '</div></div>';
   }
 
   _renderTopologyTab() {
