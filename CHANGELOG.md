@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Update existing English/Polish labels and administrator scan controls immediately when Home Assistant changes language or permissions, including while editing and during the render throttle. Preserve search text, focus and the full selection.
+
 ## 5.0.17 (2026-09-29)
 
 - Name the per-device unhide action clearly in English and Polish, separately from the list-wide hidden-device filter.

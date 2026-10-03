@@ -651,6 +651,12 @@ class HaNetworkMap extends HTMLElement {
       return;
     }
 
+    // Locale and scan permissions must not wait for editing or the data-render
+    // throttle. Compare rendered scalars because HA may reuse a mutable user.
+    if (this._renderedLang !== this._lang || this._renderedCanScan !== this._canScan()) {
+      this._doRender();
+    }
+
     // Skip DOM rebuilds while the user is typing in a field. A full re-render
     // on every hass update drops focus + wipes unbound inputs (the "one char at
     // a time" report on networks with many devices). Resume after blur.
@@ -1006,20 +1012,22 @@ class HaNetworkMap extends HTMLElement {
       '</div>';
 
     const support = this._hass?.user?.is_admin && this.config?.show_support !== false && !supportDismissed() ? ownDonateFooter() : '';
+    this._renderedLang = this._lang;
+    this._renderedCanScan = this._canScan();
     if (this._lastHtml === html + support) return;
     // Preserve focus + caret across the full innerHTML rebuild so typing in an
     // input (search / subnet / config) survives data-driven re-renders instead
     // of dropping a character per refresh.
     const _ae = this.shadowRoot.activeElement;
     const _fid = _ae && _ae.id;
-    let _ss = null, _se = null;
-    try { if (_ae) { _ss = _ae.selectionStart; _se = _ae.selectionEnd; } } catch (e) {}
+    let _ss = null, _se = null, _sd = null;
+    try { if (_ae) { _ss = _ae.selectionStart; _se = _ae.selectionEnd; _sd = _ae.selectionDirection; } } catch (e) {}
     this._lastHtml = html + support;
     this.shadowRoot.innerHTML = html + support;
     this._bindEvents();
     if (_fid) {
       const _el = this.shadowRoot.getElementById(_fid);
-      if (_el) { try { _el.focus(); if (_ss != null && _el.setSelectionRange) _el.setSelectionRange(_ss, _se); } catch (e) {} }
+      if (_el) { try { _el.focus({ preventScroll: true }); if (_ss != null && _el.setSelectionRange) _el.setSelectionRange(_ss, _se, _sd || 'none'); } catch (e) {} }
     }
   }
 
