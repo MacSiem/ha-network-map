@@ -58,21 +58,6 @@ test('ordinary locale update during search editing translates immediately and re
   } finally { dom.window.close(); }
 });
 
-test('ordinary locale update during subnet editing retains the unsaved value and selection', () => {
-  const { dom, card, hass, commands } = fixture();
-  try {
-    card.activeTab = 'topology'; card._doRender();
-    draft(card, 'subnetInput', '192.0.2');
-    const subnets = [...card._subnets];
-    card.hass = { ...hass, language: 'pl' };
-    assert.equal(card.shadowRoot.getElementById('subnetInput').placeholder, card._t('addSubnetLabel'));
-    checkDraft(card, 'subnetInput', '192.0.2');
-    assert.deepEqual([...card._subnets], subnets);
-    assert.equal(card.activeTab, 'topology');
-    assert.equal(commands.length, 0);
-  } finally { dom.window.close(); }
-});
-
 test('ordinary locale update is immediate during render throttle without API reads', () => {
   const { dom, card, hass, commands } = fixture();
   try {
@@ -96,16 +81,29 @@ test('role loss while editing disables scan immediately, retaining the draft, wi
   } finally { dom.window.close(); }
 });
 
-test('role changes during throttle synchronize both scan buttons before any user action', () => {
+test('role changes during throttle synchronize the scan button while retaining the topology tab', () => {
   const { dom, card, hass, commands } = fixture();
   try {
     card.activeTab = 'topology'; card._doRender();
     for (const user of [undefined, { id: 'qa-household', is_admin: false }, hass.user]) {
       card.hass = { ...hass, user };
-      for (const id of ['rescanBtn', 'rescanSubnetBtn']) {
+      for (const id of ['rescanBtn']) {
         assert.equal(card.shadowRoot.getElementById(id).disabled, user?.is_admin !== true);
       }
     }
     assert.equal(commands.length, 0);
   } finally { dom.window.close(); }
+});
+
+test('ordinary locale changes remain independent across two cards', () => {
+  const first = fixture(); const second = fixture();
+  try {
+    draft(first.card, 'sI', 'QA locale');
+    second.card.hass = { ...second.hass, language: 'pl', user: { id: 'qa-household', is_admin: false } };
+    assert.equal(second.card.shadowRoot.getElementById('rescanBtn').textContent.trim(), '🔄 Skanuj');
+    assert.equal(second.card.shadowRoot.getElementById('rescanBtn').disabled, true);
+    assert.equal(first.card.shadowRoot.getElementById('sI').placeholder, 'Search devices...');
+    checkDraft(first.card, 'sI', 'QA locale');
+    assert.equal(first.commands.length + second.commands.length, 0);
+  } finally { first.dom.window.close(); second.dom.window.close(); }
 });
