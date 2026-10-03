@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- Update existing English/Polish labels and administrator scan controls immediately when Home Assistant changes language or permissions, including while editing and during the render throttle. Preserve search text, focus and the full selection.
+
+## 5.0.17 (2026-09-29)
+
+- Name the per-device unhide action clearly in English and Polish, separately from the list-wide hidden-device filter.
+
+- Show the full topology device name when navigating with the keyboard, and expose individual named nodes to accessibility tools instead of treating the entire diagram as one image.
+
+- Keep the existing device map readable for household users, disable administrator-only network scans with English/Polish guidance, and reject direct scan attempts before a server request. Render scan errors as text.
+
+- Validate IP literals and MAC hex digits before classifying network devices; URL paths and mislabeled tracker hostnames are not addresses. IPv6 configuration URLs are supported.
+
+- Register one storage-mode Lovelace resource and an administrator-only sidebar panel; preserve an existing HACS resource, refresh the owned resource on upgrade and remove owned UI entries on unload. YAML mode keeps the frontend fallback.
+- Require Home Assistant 2025.2 for Lovelace resource and panel APIs.
+- Default map now includes only MAC/IP devices; HACS repositories and service entries without connection evidence stay out. Optional filter includes explicit non-network connections.
+- Use the integration as the sole discovery source, avoiding duplicate browser tracker rows. Preserve reachability across list refreshes and remove stale registry rows.
+- Hide/unhide devices and override category using a stable registry ID in local browser storage. Link to HA device and entity pages.
+- Keep dense topology nodes and category summaries inside the canvas, limit visible nodes to 24, and expose full names through hover/focus labels instead of overlapping text.
+- Leave gateway IP optional instead of inventing a default router address; empty topology points to registry/filter setup.
+- A 600-entry registry fixture verifies that 50 addressed devices remain in the default view.
+
 ## 5.0.16 (2026-08-28)
 
 - Isolation: Bento CSS is component-local and cannot be captured from `window.HAToolsBentoCSS` by load order.

@@ -7,7 +7,7 @@ reachability from the Home Assistant host itself — not from your browser.
 Ships as a Home Assistant integration with a bundled Lovelace card; no manual
 resource entry required.
 
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.7+-blue.svg?logo=homeassistant)](https://www.home-assistant.io/) [![Version](https://img.shields.io/github/v/release/MacSiem/ha-network-map)](https://github.com/MacSiem/ha-network-map/releases) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.2+-blue.svg?logo=homeassistant)](https://www.home-assistant.io/) [![Version](https://img.shields.io/github/v/release/MacSiem/ha-network-map)](https://github.com/MacSiem/ha-network-map/releases) [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 Part of the [HA Tools](https://github.com/MacSiem) ecosystem.
 
@@ -16,13 +16,15 @@ Part of the [HA Tools](https://github.com/MacSiem) ecosystem.
 **Short version: install the integration, add the card, browse.**
 
 1. **Discovery is read-only and server-side.** The bundled Python integration
-   reads devices straight from Home Assistant's own device registry, entity
-   registry, `device_tracker.*` states, and — where available — Zeroconf /
-   DHCP discovery caches. No browser-side enumeration, ever.
+   reads HA's device and entity registries, `device_tracker.*` states and, where
+   available, Zeroconf / DHCP discovery caches. By default it shows only
+   devices with a MAC or IP address. HACS repository and service entries with
+   no connection are excluded. The optional filter shows Bluetooth, Zigbee
+   and other entries with an explicit connection but no network address.
 2. **The card is bundled and auto-registered.** The integration serves
-   `ha-network-map.js` as a static path and registers it as a frontend
-   resource on setup (cache-busted by the integration version) — you only add
-   `custom:ha-network-map` to a dashboard.
+   `ha-network-map.js`, registers a storage-mode Lovelace resource and an
+   administrator-only sidebar panel. YAML mode uses Home Assistant's frontend
+   fallback. You can also add `custom:ha-network-map` to a dashboard.
 3. **Reachability is probed from the HA host, not your browser.** TCP connect
    attempts against a smart-home port set (`80, 443, 8123, 6053, 1883, 8883,
    554, 22, 631` by default) run from the Home Assistant host, so results are
@@ -44,6 +46,12 @@ Part of the [HA Tools](https://github.com/MacSiem) ecosystem.
 | Device discovery from HA's registries (all users can view it) | Triggering a scan (admin-only — button, service, or automation) |
 | Reachability scope guard (RFC1918 / loopback / link-local only) | Enabling `include_public_ips` if you understand the implications |
 | Cache-busting the card on integration upgrades | Adding `custom:ha-network-map` to a dashboard |
+| Default MAC/IP filtering | Showing non-network connection types, hiding a device or changing its category |
+
+Hidden devices and category choices use the HA Device Registry ID where
+available, so an IP change does not lose the choice. The card links to the
+HA device and entity pages. These choices are stored in this browser's
+`localStorage`; they do not sync between browsers or household members.
 
 ## Screenshots
 
@@ -51,9 +59,10 @@ Part of the [HA Tools](https://github.com/MacSiem) ecosystem.
 |---|---|
 | ![Devices tab, light theme](docs/screenshots/card-map-light.png) | ![Devices tab, dark theme](docs/screenshots/card-map-dark.png) |
 
-*The Devices tab: per-device reachability, MAC/IP, manufacturer and any bound
-HA entity. The Topology tab renders the same devices as a hub-and-spoke graph.
-Dark mode follows your Home Assistant theme automatically.*
+*The Devices tab: reachability summary, MAC/IP filter, manufacturer and device
+rows. The fixture uses TEST-NET addresses and invented device names; it does
+not show a real household network. The Topology tab renders the same devices
+as a hub-and-spoke graph. Dark mode follows your Home Assistant theme.*
 
 ## Installation
 
@@ -63,7 +72,8 @@ Dark mode follows your Home Assistant theme automatically.*
 3. Install **Network Map** and restart Home Assistant.
 4. **Settings → Devices & services → Add Integration → Network Map** (single
    instance, no fields to fill in).
-5. The Lovelace card is registered automatically — no resource entry needed.
+5. Administrators can open **Network Map** in the sidebar. The Lovelace card is
+   registered automatically — no resource entry needed.
 
 If you previously installed v4 as a Lovelace plugin, remove the old
 `/local/community/ha-network-map/...` resource entry under *Dashboards →
@@ -144,9 +154,8 @@ action:
   originates from the HA host, not a third-party service.
 - Device data stays inside Home Assistant — the integration only reads HA's
   own registries and discovery caches; nothing is sent externally.
-- The card uses browser `localStorage` only for a small set of UI
-  preferences (intro-dismissed marker and a user-supplied per-device label /
-  "binding" map). No device or scan data is cached in the browser.
+- The card uses browser `localStorage` for intro dismissal, bindings, hidden
+  device IDs and categories. Scan results are not persisted in the browser.
 - No telemetry, no analytics, no CDN-hosted assets.
 
 ## FAQ
@@ -161,13 +170,11 @@ Yes, as of 5.0.7. `list_devices` and `status` are open to every logged-in
 user, so the card renders for the whole household. Only triggering a new
 scan requires an administrator account.
 
-**Why do I only see `device_tracker.*` devices, not my Zigbee/Bluetooth
-gear?**
-You shouldn't — the integration reads the full device registry server-side,
-so Bluetooth, Zigbee, Z-Wave, MQTT, ESPHome, and any other integration that
-registers a device all show up, not just `device_tracker.*` entities. Devices
-without an IP (most Zigbee/Z-Wave/serial gear) show `—` for reachability
-instead of being flagged unreachable, since they were never scannable.
+**Why are my Zigbee/Bluetooth devices absent by default?**
+The map starts with MAC/IP devices. Select **Show devices without MAC/IP** to
+include entries with an explicit connection type, such as Zigbee or Bluetooth.
+Addressless service entries stay excluded. Devices without an IP show `—` for
+reachability because they cannot be probed.
 
 **A device reachability shows "unreachable" even though it's online.**
 A device only counts as unreachable when every probed port times out with no
@@ -191,6 +198,8 @@ development:
 
 - [Buy Me a Coffee](https://buymeacoffee.com/macsiem)
 - [PayPal](https://www.paypal.com/donate/?hosted_button_id=Y967H4PLRBN8W)
+
+The card shows a small support link to administrators. It can be dismissed in the browser or hidden with `show_support: false` in the card configuration.
 
 ## License
 

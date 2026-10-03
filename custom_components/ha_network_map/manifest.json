@@ -8,6 +8,8 @@
   "dependencies": [
     "frontend",
     "http",
+    "lovelace",
+    "panel_custom",
     "websocket_api"
   ],
   "documentation": "https://github.com/MacSiem/ha-network-map",
@@ -15,5 +17,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/MacSiem/ha-network-map/issues",
   "requirements": [],
-  "version": "5.0.16"
+  "version": "5.0.17"
 }

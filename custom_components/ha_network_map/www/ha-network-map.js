@@ -1,4 +1,4 @@
-/* HA Tools split — ha-network-map v5.0.16 (2026-08-28) — single-tool standalone repo */
+/* HA Tools split — ha-network-map v5.0.17 (2026-09-29) — single-tool standalone repo */
 (function() {
 'use strict';
 
@@ -6,7 +6,9 @@
 const _asText = (s) => String(s ?? '');
 const _escBase = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const _esc = (s) => _escBase(_asText(s));
-const ownDonateFooter = () => `<style>.donate-section{margin:24px 12px 4px;padding:20px 24px;background:linear-gradient(135deg,rgba(99,102,241,.06),rgba(236,72,153,.06));border:1px solid rgba(99,102,241,.18);border-radius:18px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:18px}.donate-section h3{margin:0 0 6px}.donate-section p{margin:0}.donate-buttons{display:flex;gap:10px;flex-wrap:wrap}.donate-btn{display:inline-flex;padding:10px 18px;border-radius:12px;font-weight:700;text-decoration:none}.donate-btn.coffee{background:#ffdd00;color:#000}.donate-btn.paypal{background:#0070ba;color:#fff}</style><section class="donate-section" data-source="own-card"><div><h3>❤️ Support HA Tools Development</h3><p>If this tool makes your Home Assistant life easier, consider supporting the project.</p></div><div class="donate-buttons"><a class="donate-btn coffee" href="https://buymeacoffee.com/macsiem" target="_blank" rel="noopener noreferrer">☕ Buy Me a Coffee</a><a class="donate-btn paypal" href="https://www.paypal.com/donate/?hosted_button_id=Y967H4PLRBN8W" target="_blank" rel="noopener noreferrer">💳 PayPal</a></div></section>`;
+const SUPPORT_DISMISSED_KEY = 'ha-network-map-support-dismissed';
+const supportDismissed = () => { try { return localStorage.getItem(SUPPORT_DISMISSED_KEY) === '1'; } catch (_) { return false; } };
+const ownDonateFooter = () => `<section class="donate-section" data-source="own-card" style="margin:8px 0 0;padding:4px 0;background:none;border:0;box-shadow:none;min-height:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex-direction:row;justify-content:flex-start;text-align:left"><a href="https://buymeacoffee.com/macsiem" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:var(--secondary-text-color,#64748b);font-weight:400;text-decoration:underline">Optional support for HA Tools</a><button type="button" class="support-dismiss" aria-label="Dismiss support link" style="margin-left:auto;padding:2px 6px;min-height:0;line-height:1;border:0;background:none;color:var(--secondary-text-color,#64748b);cursor:pointer">×</button></section>`;
 
 /* ===== HA Tools split — inline shared infrastructure ===== */
 // Bento Design System CSS (inline copy — keeps tool standalone)
@@ -511,7 +513,7 @@ class HaNetworkMap extends HTMLElement {
     this._hass = null;
     this.activeTab = 'devices';
     this._title = 'Network Map';
-    this._routerIp = '192.168.1.1';
+    this._routerIp = '';
     this.config = {};
 
     // Data
@@ -524,6 +526,8 @@ class HaNetworkMap extends HTMLElement {
     this._scanProgress = { current: 0, total: 0 };
     this._lastScanTime = null;
     this._deviceRegistry = [];
+    this._includeNonNetwork = false;
+    this._devicePrefs = {};
 
     // UI State
     this.searchQuery = '';
@@ -554,6 +558,7 @@ class HaNetworkMap extends HTMLElement {
         unreachableCount: 'Unreachable', boundCount: 'Bound to HA',
         noDevicesFound: 'No devices found. Start a network scan.',
         scanningNetwork: 'Scanning network...', scanProgress: 'Progress',
+        scanAdminRequired: 'Only an administrator can start a network scan.',
         // Topology tab
         networkTopology: 'Network Topology', router: 'Router', gateway: 'Gateway',
         // Subnets tab
@@ -569,6 +574,8 @@ class HaNetworkMap extends HTMLElement {
         // Detail
         details: 'Details', bind: 'Bind', unbind: 'Unbind', close: 'Close',
         category: 'Category', status: 'Status', lastSeen: 'Last Seen',
+        showOtherDevices: 'Show devices without MAC/IP', hideDevice: 'Hide device', showDevice: 'Show device', showHidden: 'Show hidden',
+        openDevice: 'Open HA device', openEntity: 'Open HA entity',
       },
       pl: {
         // Tabs
@@ -580,6 +587,7 @@ class HaNetworkMap extends HTMLElement {
         unreachableCount: 'Niedostępne', boundCount: 'Powiązane z HA',
         noDevicesFound: 'Brak urządzeń. Uruchom skanowanie sieci.',
         scanningNetwork: 'Skanowanie sieci...', scanProgress: 'Postęp',
+        scanAdminRequired: 'Tylko administrator może uruchomić skanowanie sieci.',
         // Topology tab
         networkTopology: 'Topologia sieci', router: 'Router', gateway: 'Brama',
         // Subnets tab
@@ -595,6 +603,8 @@ class HaNetworkMap extends HTMLElement {
         // Detail
         details: 'Szczegóły', bind: 'Powiąż', unbind: 'Rozpowiąż', close: 'Zamknij',
         category: 'Kategoria', status: 'Stan', lastSeen: 'Ostatnio widoczne',
+        showOtherDevices: 'Pokaż urządzenia bez MAC/IP', hideDevice: 'Ukryj urządzenie', showDevice: 'Pokaż urządzenie', showHidden: 'Pokaż ukryte',
+        openDevice: 'Otwórz urządzenie HA', openEntity: 'Otwórz encję HA',
       }
     };
   }
@@ -608,7 +618,8 @@ class HaNetworkMap extends HTMLElement {
   setConfig(config) {
     this.config = config;
     this._title = config.title || 'Network Map';
-    this._routerIp = config.router_ip || '192.168.1.1';
+    this._routerIp = typeof config.router_ip === 'string' ? config.router_ip.trim() : '';
+    this._lastHtml = '';
   }
 
   set hass(hass) {
@@ -633,10 +644,17 @@ class HaNetworkMap extends HTMLElement {
       // bundled Python integration owns the canonical device list and
       // reachability data; we just pull it once on first hass connect.
       this._loadBindings();
+      this._loadDevicePrefs();
       this._loadDeviceRegistry().then(() => this._reloadFromApi()).then(() => {
         this._doRender();
       });
       return;
+    }
+
+    // Locale and scan permissions must not wait for editing or the data-render
+    // throttle. Compare rendered scalars because HA may reuse a mutable user.
+    if (this._renderedLang !== this._lang || this._renderedCanScan !== this._canScan()) {
+      this._doRender();
     }
 
     // Skip DOM rebuilds while the user is typing in a field. A full re-render
@@ -723,6 +741,20 @@ class HaNetworkMap extends HTMLElement {
     } catch (e) { console.debug('[ha-network-map] caught:', e); }
   }
 
+  _loadDevicePrefs() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('ha-network-map-device-prefs') || '{}');
+      this._devicePrefs = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+    } catch (e) { this._devicePrefs = {}; }
+  }
+
+  _saveDevicePrefs() {
+    try { localStorage.setItem('ha-network-map-device-prefs', JSON.stringify(this._devicePrefs)); }
+    catch (e) { console.warn('[ha-network-map] Device preferences could not be saved', e); }
+  }
+
+  _preferenceId(device) { return device.device_id ? `device:${device.device_id}` : device.mac ? `mac:${device.mac.toLowerCase()}` : `key:${device.key}`; }
+
   _detectDefaultSubnet() {
     // Try to detect subnet from router IP config
     if (this._routerIp && /^\d+\.\d+\.\d+\.\d+$/.test(this._routerIp)) {
@@ -752,6 +784,10 @@ class HaNetworkMap extends HTMLElement {
     await this._scanAllSubnets();
   }
 
+  _canScan() {
+    return this._hass?.user?.is_admin === true;
+  }
+
   async _scanAllSubnets() {
     // v5: delegate to the bundled Python integration's server-side scan.
     // The previous browser-side path (per-IP fetch() HEAD probes against
@@ -765,7 +801,7 @@ class HaNetworkMap extends HTMLElement {
     // The Python integration handles all three: probes run from the HA
     // host (always the home LAN), use a smart-home port set, and skip
     // public IPs by default.
-    if (this._scanInProgress) return;
+    if (this._scanInProgress || !this._canScan()) return;
     if (!this._hass) {
       this._scanError = this._integrationMissingHint();
       this._doRender();
@@ -801,7 +837,7 @@ class HaNetworkMap extends HTMLElement {
     // `_integrationDevices` for the richer info the renderer can use.
     if (!this._hass) return;
     try {
-      const res = await this._hass.callWS({ type: 'ha_network_map/list_devices' });
+      const res = await this._hass.callWS({ type: 'ha_network_map/list_devices', include_non_network: this._includeNonNetwork });
       const list = (res && res.devices) || [];
       this._integrationDevices = list;
       const reachMap = {};
@@ -855,68 +891,27 @@ class HaNetworkMap extends HTMLElement {
   _buildDeviceList() {
     this.devices = [];
     const seen = new Set();
-
-    // Get device registry info for enrichment
-    const regInfo = this._getRegistryInfo();
-
-    // Get all device_tracker entities from HA
-    if (this._hass?.states) {
-      Object.values(this._hass.states).forEach(entity => {
-        if (!entity.entity_id || !entity.entity_id.startsWith('device_tracker.')) return;
-        const a = entity.attributes || {};
-        const name = a.friendly_name || entity.entity_id.split('.')[1];
-        const nameLow = name.toLowerCase();
-        const reg = regInfo[nameLow] || {};
-        const ip = a.ip_address || a.ip || a.local_ip || a.host_ip || reg.ip || null;
-        const mac = a.mac_address || a.mac || a.host_mac || reg.mac || null;
-        const manufacturer = a.manufacturer || reg.manufacturer || null;
-        const model = a.model || reg.model || null;
-
-        // Deduplicate by IP (if has one) or entity_id
-        const dedupeKey = ip || entity.entity_id;
-        if (seen.has(dedupeKey)) return;
-        seen.add(dedupeKey);
-        if (ip) seen.add(ip); // also mark IP as seen for scan merge
-
-        const bindKey = ip || entity.entity_id;
-        const isReachable = ip ? (this._scanResults[ip] === true) : null;
-
-        this.devices.push({
-          ip, mac, manufacturer, model, name,
-          category: this._cat(name, { manufacturer, model }),
-          icon: this._icon(name, { manufacturer, model }),
-          reachable: isReachable,
-          entity_id: entity.entity_id,
-          state: entity.state,
-          source_type: a.source_type || null,
-          lastSeen: a.last_seen || new Date().toISOString(),
-          binding: this._bindings[bindKey] || null
-        });
-      });
-    }
-
-    // v5: merge in the rest of the device map from the bundled Python
-    // integration. The v4 path only iterated `device_tracker.*`, which
-    // was the HACS reviewer's third concern — the vast majority of an
-    // HA install's devices (Bluetooth, Zigbee, Z-Wave, MQTT, ESPHome,
-    // most cloud integrations) never appear in `device_tracker.*`.
-    // The integration reads the full device registry server-side and
-    // joins reachability state from its own ICMP/TCP scan.
+    // The integration is the only discovery source. Mixing its rows with
+    // browser-side trackers duplicated devices and admitted addressless rows.
     if (Array.isArray(this._integrationDevices)) {
       for (const d of this._integrationDevices) {
         if (!d) continue;
-        const dedupeKey = d.ip || d.mac || d.key;
+        const dedupeKey = d.mac || d.ip || d.key;
         if (!dedupeKey || seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
         if (d.ip) seen.add(d.ip);
         const name = d.name || d.ip || d.mac || 'Unknown';
+        const preferenceId = this._preferenceId(d);
+        const preference = this._devicePrefs[preferenceId] || {};
+        if (preference.hidden && !this._showHidden) continue;
         this.devices.push({
+          key: d.key, device_id: d.device_id || null, kind: d.kind || 'network', preferenceId,
           ip: d.ip || null,
           mac: d.mac || null,
           manufacturer: d.manufacturer || null,
           model: d.model || null,
           name,
-          category: this._cat(name, { manufacturer: d.manufacturer, model: d.model }),
+          category: preference.category || this._cat(name, { manufacturer: d.manufacturer, model: d.model }),
           icon: this._icon(name, { manufacturer: d.manufacturer, model: d.model }),
           reachable: (d.reachable === true) ? true : (d.reachable === false ? false : null),
           entity_id: (d.entity_ids && d.entity_ids[0]) || null,
@@ -925,7 +920,7 @@ class HaNetworkMap extends HTMLElement {
           source_type: null,
           sources: d.sources || [],
           open_ports: d.open_ports || [],
-          lastSeen: new Date().toISOString(),
+          lastSeen: null,
           binding: this._bindings[dedupeKey] || null
         });
       }
@@ -1003,7 +998,7 @@ class HaNetworkMap extends HTMLElement {
       '<div class="card-header">📡 ' + this._title + '</div>' +
       '<div class="header-footer">' +
       (this._lastScanTime ? '<span style="font-size:11px;color:var(--bento-text-secondary);">Scanned: ' + new Date(this._lastScanTime).toLocaleTimeString() + '</span>' : '') +
-      '<button class="rb" id="rescanBtn">🔄 ' + (this._lang === 'pl' ? 'Skanuj' : 'Rescan') + '</button>' +
+      '<button class="rb" id="rescanBtn"' + (!this._canScan() || this._scanInProgress ? ' disabled' : '') + '>🔄 ' + (this._lang === 'pl' ? 'Skanuj' : 'Rescan') + '</button>' +
       '</div>' +
       '</div>' +
       '<div class="tabs">' +
@@ -1011,24 +1006,28 @@ class HaNetworkMap extends HTMLElement {
       '<button class="tab-btn ' + (this.activeTab === 'topology' ? 'active' : '') + '" data-tab="topology">' + this._t('topologyTab') + '</button>' +
       '<button class="tab-btn ' + (this.activeTab === 'bindings' ? 'active' : '') + '" data-tab="bindings">' + this._t('bindingsTab') + '</button>' +
       '</div>' +
-      (this._scanError ? '<div style="margin:8px 12px;padding:10px 14px;background:var(--bento-error-light);color:var(--bento-error);border:1px solid var(--bento-error-border);border-radius:var(--bento-radius-sm);font-size:13px;">⚠️ ' + this._scanError + '</div>' : '') +
+      (!this._canScan() ? '<div role="status" style="margin:8px 12px;padding:10px 14px;font-size:13px;">' + _esc(this._t('scanAdminRequired')) + '</div>' : '') +
+      (this._scanError ? '<div style="margin:8px 12px;padding:10px 14px;background:var(--bento-error-light);color:var(--bento-error);border:1px solid var(--bento-error-border);border-radius:var(--bento-radius-sm);font-size:13px;">⚠️ ' + _esc(this._scanError) + '</div>' : '') +
       content +
       '</div>';
 
-    if (this._lastHtml === html) return;
+    const support = this._hass?.user?.is_admin && this.config?.show_support !== false && !supportDismissed() ? ownDonateFooter() : '';
+    this._renderedLang = this._lang;
+    this._renderedCanScan = this._canScan();
+    if (this._lastHtml === html + support) return;
     // Preserve focus + caret across the full innerHTML rebuild so typing in an
     // input (search / subnet / config) survives data-driven re-renders instead
     // of dropping a character per refresh.
     const _ae = this.shadowRoot.activeElement;
     const _fid = _ae && _ae.id;
-    let _ss = null, _se = null;
-    try { if (_ae) { _ss = _ae.selectionStart; _se = _ae.selectionEnd; } } catch (e) {}
-    this._lastHtml = html;
-    this.shadowRoot.innerHTML = html + ownDonateFooter();
+    let _ss = null, _se = null, _sd = null;
+    try { if (_ae) { _ss = _ae.selectionStart; _se = _ae.selectionEnd; _sd = _ae.selectionDirection; } } catch (e) {}
+    this._lastHtml = html + support;
+    this.shadowRoot.innerHTML = html + support;
     this._bindEvents();
     if (_fid) {
       const _el = this.shadowRoot.getElementById(_fid);
-      if (_el) { try { _el.focus(); if (_ss != null && _el.setSelectionRange) _el.setSelectionRange(_ss, _se); } catch (e) {} }
+      if (_el) { try { _el.focus({ preventScroll: true }); if (_ss != null && _el.setSelectionRange) _el.setSelectionRange(_ss, _se, _sd || 'none'); } catch (e) {} }
     }
   }
 
@@ -1062,7 +1061,7 @@ class HaNetworkMap extends HTMLElement {
       '</div>';
 
     if (!this.devices.length) {
-      return h + '<div class="es">' + this._t('noDevicesFound') + '</div>';
+      return h + '<div class="toolbar"><label><input id="showOther" type="checkbox"' + (this._includeNonNetwork ? ' checked' : '') + '> ' + this._t('showOtherDevices') + '</label><label><input id="showHidden" type="checkbox"' + (this._showHidden ? ' checked' : '') + '> ' + this._t('showHidden') + '</label></div><div class="es">' + this._t('noDevicesFound') + '</div>';
     }
 
     if (this.selectedDevice) {
@@ -1070,8 +1069,10 @@ class HaNetworkMap extends HTMLElement {
     }
 
     const catOpts = cats.map(c => '<option value="' + c + '"' + (this._catFilter === c ? ' selected' : '') + '>' + c + '</option>').join('');
-    h += '<div class="toolbar"><input type="text" class="si" id="sI" placeholder="' + this._t('searchPlaceholder') + '" value="' + (this.searchQuery || '') + '">' +
-      '<select class="fs" id="cF"><option value="all">' + this._t('allCategories') + '</option>' + catOpts + '</select></div>';
+    h += '<div class="toolbar"><input type="text" class="si" id="sI" placeholder="' + this._t('searchPlaceholder') + '" value="' + _esc(this.searchQuery || '') + '">' +
+      '<select class="fs" id="cF"><option value="all">' + this._t('allCategories') + '</option>' + catOpts + '</select>' +
+      '<label><input id="showOther" type="checkbox"' + (this._includeNonNetwork ? ' checked' : '') + '> ' + this._t('showOtherDevices') + '</label>' +
+      '<label><input id="showHidden" type="checkbox"' + (this._showHidden ? ' checked' : '') + '> ' + this._t('showHidden') + '</label></div>';
 
     const ps = this._pageSize;
     const tp = Math.max(1, Math.ceil(this.filteredDevices.length / ps));
@@ -1083,7 +1084,7 @@ class HaNetworkMap extends HTMLElement {
     let rows = '';
     items.forEach((d, i) => {
       const dot = d.reachable === true ? '<span style="color:#10B981">\u25CF</span>' : d.reachable === false ? '<span style="color:#EF4444">\u25CF</span>' : '<span style="color:#94A3B8">\u2014</span>';
-      rows += '<tr data-i="' + i + '"><td><span class="di">' + _esc(d.icon) + '</span><span class="dn">' + _esc(d.name) + '</span></td>' +
+      rows += '<tr data-i="' + i + '"><td><button type="button" class="device-detail-button"><span class="di" aria-hidden="true">' + _esc(d.icon) + '</span><span class="dn">' + _esc(d.name) + '</span></button></td>' +
         '<td>' + _esc(d.category) + '</td>' +
         '<td class="mn">' + _esc(d.ip || '—') + '</td>' +
         '<td class="mn">' + _esc(d.mac || '—') + '</td>' +
@@ -1116,7 +1117,7 @@ class HaNetworkMap extends HTMLElement {
     let rows = [
       [this._t('deviceName'), _esc(d.icon) + ' ' + _esc(d.name)],
       [this._t('category'), _esc(d.category)],
-      [this._t('status'), d.reachable ? this._t('reachableStatus') : this._t('unreachableStatus')],
+      [this._t('status'), d.reachable === null ? 'N/A' : d.reachable ? this._t('reachableStatus') : this._t('unreachableStatus')],
       [this._t('ipAddress'), _esc(d.ip || '—')],
       [this._t('macAddress'), _esc(d.mac || '—')]
     ];
@@ -1125,9 +1126,14 @@ class HaNetworkMap extends HTMLElement {
 
     const rh = rows.map(r => '<div class="dr"><span class="dl">' + r[0] + '</span><span class="dv">' + r[1] + '</span></div>').join('');
     const bindHtml = d.reachable ? '<button class="rb" id="bindBtn" data-ip="' + _esc(d.ip || d.name) + '">🔗 ' + this._t('bind') + '</button>' : '';
+    const categories = ['Phone', 'Tablet', 'Computer', 'Router', 'Camera', 'Smart Home', 'Media', 'Other'];
+    const categorySelect = '<label>' + this._t('category') + ' <select id="deviceCategory">' + categories.map(c => '<option value="' + c + '"' + (d.category === c ? ' selected' : '') + '>' + c + '</option>').join('') + '</select></label>';
+    const links = (d.device_id ? '<a href="/config/devices/device/' + encodeURIComponent(d.device_id) + '">' + this._t('openDevice') + '</a> ' : '') +
+      (d.entity_id ? '<button type="button" class="rb" id="openEntity" data-entity="' + _esc(d.entity_id) + '">' + this._t('openEntity') + '</button>' : '');
+    const hidden = !!this._devicePrefs[d.preferenceId]?.hidden;
 
     return '<div class="dd" id="dD"><button class="dc" id="cD">✕ ' + this._t('close') + '</button><div style="clear:both"></div>' +
-      rh + '<div style="margin-top:12px">' + bindHtml + '</div></div>';
+      rh + '<div style="margin-top:12px">' + categorySelect + ' <button class="rb" id="hideDevice">' + (hidden ? this._t('showDevice') : this._t('hideDevice')) + '</button> ' + links + ' ' + bindHtml + '</div></div>';
   }
 
   _renderTopologyTab() {
@@ -1136,10 +1142,10 @@ class HaNetworkMap extends HTMLElement {
       return '<div class="es" style="padding:60px 20px;">' +
         '<div style="font-size:40px;margin-bottom:12px;">🔍</div>' +
         '<div style="font-weight:600;font-size:15px;margin-bottom:6px;color:var(--bento-text);">' +
-        (this._lang === 'pl' ? 'Brak urządzeń w topologii' : 'Run a scan to see the topology') +
+        (this._lang === 'pl' ? 'Brak urządzeń w topologii' : 'No registry devices in the map') +
         '</div>' +
         '<div style="font-size:12px;color:var(--bento-text-secondary);">' +
-        (this._lang === 'pl' ? 'Kliknij Skanuj, aby wykryć urządzenia w sieci.' : 'Click Rescan to discover devices on your network.') +
+        (this._lang === 'pl' ? 'Sprawdź integrację i filtry urządzeń.' : 'Check the integration and device filters.') +
         '</div></div>';
     }
 
@@ -1157,8 +1163,8 @@ class HaNetworkMap extends HTMLElement {
     const COLOR_UNREACHABLE_FILL   = 'var(--bento-text-muted)';
     const COLOR_UNREACHABLE_STROKE = 'var(--bento-border)';
 
-    // ── Clutter handling: cap at 40 visible device nodes ────────────────────
-    const MAX_NODES = 40;
+    // ── Clutter handling: cap at 24 visible device nodes ────────────────────
+    const MAX_NODES = 24;
     let deviceNodes = this.devices.slice();
     let groupNodes  = [];
 
@@ -1183,12 +1189,12 @@ class HaNetworkMap extends HTMLElement {
 
     // ── SVG canvas geometry ──────────────────────────────────────────────────
     // viewBox 800×520 — scales to card width via CSS width:100%.
-    // Inner ring (r=180): individual device nodes.
-    // Outer ring (r=290): category summary nodes when >40 devices.
+    // Inner ring (r=155): individual device nodes.
+    // Outer ring (r=210): category summary nodes when >40 devices.
     const VW = 800, VH = 520;
     const cx = VW / 2, cy = VH / 2;
-    const INNER_R   = 180;
-    const OUTER_R   = 290;
+    const INNER_R   = 155;
+    const OUTER_R   = 210;
     const NODE_R    = 18;
     const HUB_R     = 28;
     const SUMMARY_R = 22;
@@ -1211,7 +1217,7 @@ class HaNetworkMap extends HTMLElement {
     let svg = '<svg viewBox="0 0 ' + VW + ' ' + VH + '" xmlns="http://www.w3.org/2000/svg"' +
       ' style="width:100%;display:block;background:var(--bento-bg);' +
       'border:1px solid var(--bento-border);border-radius:var(--bento-radius-sm);"' +
-      ' role="img" aria-label="Network topology graph">';
+      ' role="group" aria-label="Network topology graph">';
 
     // Defs: hub glow gradient
     svg += '<defs>' +
@@ -1250,6 +1256,7 @@ class HaNetworkMap extends HTMLElement {
       const stroke   = isUnreach ? COLOR_UNREACHABLE_STROKE : catColor.stroke;
       const fillOp   = isUnreach ? '0.08' : '0.18';
 
+      svg += '<g tabindex="0" role="img" aria-label="' + _esc(d.name || d.ip || '') + '"><title>' + _esc(d.name || d.ip || '') + '</title>';
       svg += '<circle cx="' + d._x + '" cy="' + d._y + '" r="' + NODE_R + '"' +
         ' fill="' + fill + '" fill-opacity="' + fillOp + '"' +
         ' stroke="' + stroke + '" stroke-width="' + (isReach ? '2' : '1.5') + '"' +
@@ -1261,6 +1268,8 @@ class HaNetworkMap extends HTMLElement {
         ' font-size="13" font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif">' +
         _esc(d.icon || '📡') + '</text>';
 
+      // Dense maps use full hover/focus names instead of overlapping labels.
+      if (total <= 12) {
       // Name label below node (max 12 chars)
       const label = String(d.name || d.ip || '').substring(0, 12);
       svg += '<text x="' + d._x + '" y="' + (d._y + NODE_R + 11) + '"' +
@@ -1268,6 +1277,7 @@ class HaNetworkMap extends HTMLElement {
         ' font-family="Inter,SF Pro,system-ui,sans-serif"' +
         ' fill="var(--bento-text-secondary)" font-weight="500">' +
         _esc(label) + '</text>';
+      }
 
       // Reachability dot (top-right quadrant of node)
       if (d.reachable === true || d.reachable === false) {
@@ -1275,6 +1285,7 @@ class HaNetworkMap extends HTMLElement {
         svg += '<circle cx="' + (d._x + NODE_R * 0.7) + '" cy="' + (d._y - NODE_R * 0.7) + '"' +
           ' r="4.5" fill="' + dotColor + '" stroke="var(--bento-card)" stroke-width="1.5"/>';
       }
+      svg += '</g>';
     });
 
     // Summary group nodes (outer ring)
@@ -1299,7 +1310,7 @@ class HaNetworkMap extends HTMLElement {
     svg += '<text x="' + cx + '" y="' + cy + '"' +
       ' text-anchor="middle" dominant-baseline="central"' +
       ' font-size="18" font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif">📡</text>';
-    const routerLabel = this._routerIp || 'Router';
+    const routerLabel = this._routerIp || (this._lang === 'pl' ? 'Mapa urządzeń' : 'Device map');
     svg += '<text x="' + cx + '" y="' + (cy + HUB_R + 12) + '"' +
       ' text-anchor="middle" font-size="9.5" font-weight="600"' +
       ' font-family="SF Mono,Fira Code,monospace" fill="var(--bento-primary)">' +
@@ -1328,7 +1339,7 @@ class HaNetworkMap extends HTMLElement {
     }
     if (clipped > 0) {
       legend += '<span style="margin-left:auto;font-style:italic;">' +
-        (this._lang === 'pl' ? 'Pokazano 40 z ' + this.devices.length : 'Showing 40 of ' + this.devices.length + ' devices') +
+        (this._lang === 'pl' ? 'Pokazano ' + MAX_NODES + ' z ' + this.devices.length : 'Showing ' + MAX_NODES + ' of ' + this.devices.length + ' devices') +
         '</span>';
     }
     legend += '</div>';
@@ -1348,7 +1359,10 @@ class HaNetworkMap extends HTMLElement {
     });
     catKey += '</div>';
 
-    return svg + legend + catKey;
+    const focusedName = '<div class="topology-node-name" role="status" aria-live="polite"' +
+      ' style="min-height:1.4em;margin-top:8px;font-size:13px;overflow-wrap:anywhere;color:var(--bento-text-secondary)">' +
+      (this._lang === 'pl' ? 'Przejdź klawiszem Tab do urządzenia, aby zobaczyć pełną nazwę.' : 'Use Tab to show a device’s full name.') + '</div>';
+    return svg + focusedName + legend + catKey;
   }
   _renderSubnetsTab() {
     let h = '<div class="tree-view">';
@@ -1375,7 +1389,7 @@ class HaNetworkMap extends HTMLElement {
     h += '<div style="margin-top:16px"><div style="display:flex;gap:8px">' +
       '<input type="text" class="si" id="subnetInput" placeholder="' + this._t('addSubnetLabel') + '" style="flex:1">' +
       '<button class="rb" id="addSubnetBtn">' + (this._lang === 'pl' ? 'Dodaj' : 'Add') + '</button>' +
-      '<button class="rb" id="rescanSubnetBtn">🔄 ' + this._t('rescanAll') + '</button>' +
+      '<button class="rb" id="rescanSubnetBtn"' + (!this._canScan() || this._scanInProgress ? ' disabled' : '') + '>🔄 ' + this._t('rescanAll') + '</button>' +
       '</div></div>';
 
     return h + '</div>';
@@ -1444,6 +1458,18 @@ class HaNetworkMap extends HTMLElement {
   }
 
   _bindEvents() {
+    this.shadowRoot.querySelectorAll('svg g[tabindex="0"]').forEach(node => {
+      const showName = () => {
+        const label = this.shadowRoot.querySelector('.topology-node-name');
+        if (label) label.textContent = node.getAttribute('aria-label') || '';
+      };
+      node.addEventListener('focus', showName);
+      node.addEventListener('mouseover', showName);
+    });
+    this.shadowRoot.querySelector('.support-dismiss')?.addEventListener('click', () => {
+      try { localStorage.setItem(SUPPORT_DISMISSED_KEY, '1'); } catch (_) {}
+      this._doRender();
+    });
     // Tab switching
     this.shadowRoot.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1453,6 +1479,15 @@ class HaNetworkMap extends HTMLElement {
         this._doRender();
       });
     });
+
+    const openEntity = this.shadowRoot.querySelector('#openEntity');
+    if (openEntity) {
+      openEntity.addEventListener('click', () => {
+        this.dispatchEvent(new CustomEvent('hass-more-info', {
+          detail: { entityId: openEntity.dataset.entity }, bubbles: true, composed: true
+        }));
+      });
+    }
 
     // Rescan button
     const rescanBtn = this.shadowRoot.querySelector('#rescanBtn');
@@ -1481,6 +1516,38 @@ class HaNetworkMap extends HTMLElement {
       });
     }
 
+    const showOther = this.shadowRoot.querySelector('#showOther');
+    if (showOther) showOther.addEventListener('change', async e => {
+      this._includeNonNetwork = e.target.checked;
+      this._currentPage = 1;
+      await this._reloadFromApi();
+      this._doRender();
+    });
+    const showHidden = this.shadowRoot.querySelector('#showHidden');
+    if (showHidden) showHidden.addEventListener('change', e => {
+      this._showHidden = e.target.checked;
+      this._buildDeviceList();
+      this._doRender();
+    });
+    const deviceCategory = this.shadowRoot.querySelector('#deviceCategory');
+    if (deviceCategory && this.selectedDevice) deviceCategory.addEventListener('change', e => {
+      const id = this.selectedDevice.preferenceId;
+      this._devicePrefs[id] = { ...this._devicePrefs[id], category: e.target.value };
+      this._saveDevicePrefs();
+      this._buildDeviceList();
+      this.selectedDevice = this.devices.find(d => d.preferenceId === id) || null;
+      this._doRender();
+    });
+    const hideDevice = this.shadowRoot.querySelector('#hideDevice');
+    if (hideDevice && this.selectedDevice) hideDevice.addEventListener('click', () => {
+      const id = this.selectedDevice.preferenceId;
+      this._devicePrefs[id] = { ...this._devicePrefs[id], hidden: !this._devicePrefs[id]?.hidden };
+      this._saveDevicePrefs();
+      this.selectedDevice = null;
+      this._buildDeviceList();
+      this._doRender();
+    });
+
     this.shadowRoot.querySelectorAll('th[data-s]').forEach(th => {
       th.addEventListener('click', () => {
         const s = th.dataset.s;
@@ -1498,14 +1565,23 @@ class HaNetworkMap extends HTMLElement {
         const ps = (this._currentPage - 1) * this._pageSize;
         this.selectedDevice = this.filteredDevices[ps + idx];
         this._doRender();
+        this.shadowRoot.querySelector('#cD')?.focus();
       });
     });
 
     const cD = this.shadowRoot.querySelector('#cD');
     if (cD) {
       cD.addEventListener('click', () => {
+        const preferenceId = this.selectedDevice?.preferenceId;
         this.selectedDevice = null;
         this._doRender();
+        const index = this.filteredDevices.findIndex(d => d.preferenceId === preferenceId);
+        const pageStart = (this._currentPage - 1) * this._pageSize;
+        if (index >= pageStart && index < pageStart + this._pageSize) {
+          this.shadowRoot.querySelector('tr[data-i="' + (index - pageStart) + '"] .device-detail-button')?.focus();
+        } else {
+          this.shadowRoot.querySelector('#sI')?.focus();
+        }
       });
     }
 
@@ -1674,6 +1750,7 @@ class HaNetworkMap extends HTMLElement {
     'tr:hover td { background: rgba(59,130,246,.04); }' +
     'tr { cursor: pointer; }' +
     '.di { font-size: 16px; margin-right: 4px; vertical-align: middle; }' +
+    '.device-detail-button { padding: 4px 2px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }' +
     '.dn { font-weight: 500; }' +
     '.ds { font-size: 11px; color: var(--bento-text-muted); }' +
     '.mn { font-family: "SF Mono", monospace; font-size: 12px; color: var(--bento-text-secondary); }' +
@@ -1738,10 +1815,10 @@ class HaNetworkMap extends HTMLElement {
 
   getCardSize() { return 8; }
 
-  getGridOptions() { return { rows: 10, columns: 12, min_rows: 3, min_columns: 6 }; }
+  getGridOptions() { return { columns: 12, min_rows: 3, min_columns: 6 }; }
   static getConfigElement() { return document.createElement('ha-network-map-editor'); }
   static getStubConfig() {
-    return { type: 'custom:ha-network-map', title: 'Network Map', router_ip: '192.168.1.1' };
+    return { type: 'custom:ha-network-map', title: 'Network Map' };
   }
 }
 
@@ -1792,7 +1869,7 @@ class HaNetworkMapEditor extends HTMLElement {
       </div>
       <div>
         <label>Router IP</label>
-        <input type="text" id="cf_router_ip" value="${_esc(this._config?.router_ip || '192.168.1.1')}">
+        <input type="text" id="cf_router_ip" value="${_esc(this._config?.router_ip || '')}">
       
         </div>
     `;
