@@ -90,7 +90,22 @@ test('role changes during throttle synchronize the scan button while retaining t
       for (const id of ['rescanBtn']) {
         assert.equal(card.shadowRoot.getElementById(id).disabled, user?.is_admin !== true);
       }
+      assert.equal(card.activeTab, 'topology');
     }
+    assert.equal(commands.length, 0);
+  } finally { dom.window.close(); }
+});
+
+test('ordinary data updates still defer DOM replacement while search is being edited', () => {
+  const { dom, card, hass, commands } = fixture();
+  try {
+    const input = draft(card, 'sI', 'QA locale');
+    card._integrationDevices = [{ key: 'new', name: 'QA locale new device', ip: '192.0.2.2', entity_ids: [] }];
+    card._lastRenderTime = 0;
+    card.hass = { ...hass, states: { 'sensor.qa': { state: '2' } } };
+    assert.equal(card.shadowRoot.getElementById('sI'), input);
+    checkDraft(card, 'sI', 'QA locale');
+    assert.equal(card.shadowRoot.textContent.includes('QA locale new device'), false);
     assert.equal(commands.length, 0);
   } finally { dom.window.close(); }
 });
