@@ -25,6 +25,13 @@ Part of the [HA Tools](https://github.com/MacSiem) ecosystem.
    `ha-network-map.js`, registers a storage-mode Lovelace resource and an
    administrator-only sidebar panel. YAML mode uses Home Assistant's frontend
    fallback. You can also add `custom:ha-network-map` to a dashboard.
+   Manual resources, including duplicate URLs under the integration path and
+   HACS card copies, stay user-owned. Only resources created by this integration
+   have durable ID/URL/type receipts and can be updated or removed on unload.
+   Editing an owned resource's URL or type relinquishes integration ownership.
+   If resource cleanup fails, its receipt is retained and the next setup retries
+   safely. For a manually managed resource, update its version query yourself
+   when needed, then reload the page; the integration does not rewrite it.
 3. **Reachability is probed from the HA host, not your browser.** TCP connect
    attempts against a smart-home port set (`80, 443, 8123, 6053, 1883, 8883,
    554, 22, 631` by default) run from the Home Assistant host, so results are

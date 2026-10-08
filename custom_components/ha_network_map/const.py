@@ -1,5 +1,5 @@
 DOMAIN = "ha_network_map"
-VERSION = "5.0.20"
+VERSION = "5.0.21"
 CARD_FILENAME = "ha-network-map.js"
 CARD_URL = f"/{DOMAIN}/{CARD_FILENAME}"
 STATIC_URL_BASE = f"/{DOMAIN}"

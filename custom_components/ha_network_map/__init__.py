@@ -8,6 +8,7 @@ HA's automation engine just as easily as from the card UI.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import voluptuous as vol
 
@@ -30,10 +31,24 @@ from .scanner import NetworkScanner
 from .websocket_api import SCAN_FIELDS, async_register_commands
 
 _LOGGER = logging.getLogger(__name__)
+DATA_LIFECYCLE_LOCK = "ha_network_map_lifecycle_lock"
+DATA_FRONTEND_CLEANUP_PENDING = "_frontend_cleanup_pending"
+
+
+def _lifecycle_lock(hass: HomeAssistant) -> asyncio.Lock:
+    if DATA_LIFECYCLE_LOCK not in hass.data:
+        hass.data[DATA_LIFECYCLE_LOCK] = asyncio.Lock()
+    return hass.data[DATA_LIFECYCLE_LOCK]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the integration from a config entry."""
+    async with _lifecycle_lock(hass):
+        return await _async_setup_entry_locked(hass, entry)
+
+
+async def _async_setup_entry_locked(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Serialize setup with frontend cleanup."""
     bucket = hass.data.setdefault(DOMAIN, {})
     bucket[DATA_SCANNER] = NetworkScanner(hass)
 
@@ -41,10 +56,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_register_commands(hass)
         bucket[DATA_WS_REGISTERED] = True
 
-    if not bucket.get(DATA_FRONTEND_REGISTERED):
+    if not bucket.get(DATA_FRONTEND_REGISTERED) or bucket.get(DATA_FRONTEND_CLEANUP_PENDING):
         await async_register_static(hass)
         await async_register_card(hass)
         bucket[DATA_FRONTEND_REGISTERED] = True
+        bucket.pop(DATA_FRONTEND_CLEANUP_PENDING, None)
     if not bucket.get(DATA_PANEL_REGISTERED):
         bucket[DATA_PANEL_REGISTERED] = await async_register_panel(hass)
 
@@ -66,12 +82,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload the config entry."""
-    hass.services.async_remove(DOMAIN, "scan")
-    bucket = hass.data.get(DOMAIN, {})
-    bucket.pop(DATA_SCANNER, None)
-    if bucket.pop(DATA_PANEL_REGISTERED, False):
-        async_unregister_panel(hass)
-    if bucket.pop(DATA_FRONTEND_REGISTERED, False):
-        await async_unregister_card(hass)
-    _LOGGER.debug("Network Map unloaded (entry_id=%s)", entry.entry_id)
-    return True
+    async with _lifecycle_lock(hass):
+        hass.services.async_remove(DOMAIN, "scan")
+        bucket = hass.data.get(DOMAIN, {})
+        bucket.pop(DATA_SCANNER, None)
+        if bucket.pop(DATA_PANEL_REGISTERED, False):
+            async_unregister_panel(hass)
+        if bucket.get(DATA_FRONTEND_REGISTERED):
+            # Service, scanner and panel are unloaded. Retain the receipt and
+            # retry frontend cleanup on next setup, without FAILED_UNLOAD.
+            try:
+                await async_unregister_card(hass)
+            except Exception:
+                bucket[DATA_FRONTEND_CLEANUP_PENDING] = True
+                _LOGGER.warning("Network Map resource cleanup deferred until next setup", exc_info=True)
+            else:
+                bucket[DATA_FRONTEND_REGISTERED] = False
+                bucket.pop(DATA_FRONTEND_CLEANUP_PENDING, None)
+        _LOGGER.debug("Network Map unloaded (entry_id=%s)", entry.entry_id)
+        return True

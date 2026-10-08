@@ -1,5 +1,12 @@
 # Changelog
 
+## 5.0.21 (2026-10-08)
+
+- Preserve manually added Lovelace resources, including duplicate integration URLs and HACS card copies, through setup, upgrade and unload.
+- Persist creation receipts with resource ID, URL and type; update or remove only still-owned resources, and relinquish ownership after a user edit.
+- Serialize resource and integration lifecycle changes, confirm Store writes and retain ownership after failed cleanup so normal setup/unload can recover.
+- Keep existing map, preference, binding and scan behavior unchanged. Manual version queries remain under the user's control.
+
 ## 5.0.20 (2026-10-08)
 
 - Refresh the canonical device map after ordinary Home Assistant state and registry changes without reloading the card; throttle bursts and ignore superseded replies while retaining search, page and focus.

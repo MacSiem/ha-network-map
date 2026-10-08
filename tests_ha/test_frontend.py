@@ -52,9 +52,17 @@ async def test_upgrade_refreshes_versioned_resource(hass: HomeAssistant) -> None
     resources = hass.data["lovelace"].resources
     await resources.async_load()
     resources.loaded = True
-    await resources.async_create_item({"res_type": "module", "url": f"{CARD_URL}?v=5.9.9"})
+    from unittest.mock import patch
+    from custom_components.ha_network_map import frontend as card
+
+    with patch.object(card, "VERSION", "5.9.9"):
+        assert await card.async_register_card(hass) == "resource"
+    owned_id = list(resources.async_items())[0]["id"]
     await _setup(hass)
-    assert [item["url"] for item in resources.async_items()] == [f"{CARD_URL}?v={VERSION}"]
+    items = list(resources.async_items())
+    assert len(items) == 1
+    assert items[0]["id"] == owned_id
+    assert items[0]["url"] == f"{CARD_URL}?v={VERSION}"
 
 
 async def test_taken_panel_path_survives_unload(hass: HomeAssistant) -> None:
