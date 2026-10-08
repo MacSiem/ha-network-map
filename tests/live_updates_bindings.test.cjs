@@ -54,7 +54,7 @@ test('registry events refresh rows; state bursts are throttled and preserve sear
     f.setPayload(Array.from({ length: 65 }, (_, i) => ({ ...row(`QA router ${String(i).padStart(2, '0')}`), key: `qa${i}`, device_id: `qa${i}`, ip: `192.0.2.${i + 1}` })));
     f.card.hass = f.hass; await flush();
     f.card.searchQuery = 'QA'; f.card._currentPage = 3; f.card._filterSort(); f.card._doRender();
-    const search = f.card.shadowRoot.querySelector('#searchInput'); search.focus(); search.setSelectionRange(0, 1, 'backward');
+    const search = f.card.shadowRoot.querySelector('#sI'); search.focus(); search.setSelectionRange(0, 1, 'backward');
     const changed = f.card._integrationDevices.map(d => ({ ...d, name: d.name + ' fresh' }));
     f.setPayload(changed);
     for (let i = 0; i < 15; i++) f.card.hass = { ...f.hass, states: { [`sensor.qa${i}`]: { state: i } } };
@@ -63,7 +63,7 @@ test('registry events refresh rows; state bursts are throttled and preserve sear
     assert.equal(f.calls.filter(c => c.type.endsWith('/list_devices')).length, 2);
     assert.equal(f.card._currentPage, 3); assert.equal(f.card.searchQuery, 'QA');
     assert.match(f.card.shadowRoot.textContent, /fresh/);
-    assert.equal(f.card.shadowRoot.activeElement.id, 'searchInput');
+    assert.equal(f.card.shadowRoot.activeElement.id, 'sI');
     assert.equal(f.card.shadowRoot.activeElement.selectionDirection, 'backward');
     assert.ok(f.callbacks.has('device_registry_updated'));
     assert.ok(f.callbacks.has('entity_registry_updated'));
