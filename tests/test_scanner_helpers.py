@@ -267,3 +267,69 @@ class AddressValidationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScanBoundaryTests(unittest.IsolatedAsyncioTestCase):
+    def make_scanner(self):
+        network = scanner.NetworkScanner(types.SimpleNamespace(data={}))
+        def merge():
+            network._devices["qa"] = scanner.Device(key="qa", name="QA", ip="127.0.0.1")
+        network._merge_registry_sources = merge
+        network._merge_entity_sources = lambda: None
+        network._merge_optional_discovery_sources = lambda: None
+        return network
+
+    async def test_invalid_scan_options_rejected_before_any_probe_or_state_change(self):
+        cases = [dict(timeout=100000), dict(timeout=float("nan")), dict(timeout=float("inf")),
+                 dict(timeout=0), dict(max_concurrent=65), dict(max_concurrent=True),
+                 dict(include_public_ips="false"), dict(ports=[0]), dict(ports=[True]),
+                 dict(ports=list(range(1, 14)))]
+        for options in cases:
+            with self.subTest(options=options):
+                network = self.make_scanner()
+                calls = []
+                async def probe(*args):
+                    calls.append(args)
+                    return "open"
+                network._tcp_status = probe
+                with self.assertRaises(ValueError):
+                    await network.scan(**options)
+                self.assertEqual(calls, [])
+                self.assertIsNone(network._last_scan_started_at)
+
+    async def test_deleted_device_during_probe_does_not_break_scan(self):
+        network = self.make_scanner()
+        started, finish = asyncio.Event(), asyncio.Event()
+        async def probe(*args):
+            started.set()
+            await finish.wait()
+            return "open"
+        network._tcp_status = probe
+        pending = asyncio.create_task(network.scan(ports=[80]))
+        await started.wait()
+        network._merge_registry_sources = lambda: None
+        await network.list_devices()
+        finish.set()
+        result = await pending
+        self.assertEqual(result["device_count"], 0)
+        self.assertIsNotNone(result["last_scan_finished_at"])
+
+    async def test_ip_changed_during_probe_does_not_receive_old_ip_result(self):
+        network = self.make_scanner()
+        started, finish = asyncio.Event(), asyncio.Event()
+        async def probe(*args):
+            started.set()
+            await finish.wait()
+            return "open"
+        network._tcp_status = probe
+        pending = asyncio.create_task(network.scan(ports=[80]))
+        await started.wait()
+        def changed():
+            network._devices["qa"] = scanner.Device(key="qa", name="QA", ip="127.0.0.2")
+        network._merge_registry_sources = changed
+        await network.list_devices()
+        finish.set()
+        await pending
+        self.assertEqual(network._devices["qa"].ip, "127.0.0.2")
+        self.assertIsNone(network._devices["qa"].reachable)
+        self.assertEqual(network._devices["qa"].open_ports, [])
