@@ -530,6 +530,15 @@ class HaNetworkMap extends HTMLElement {
     this._deviceRegistry = [];
     this._includeNonNetwork = false;
     this._devicePrefs = {};
+    this._readEpoch = 0;
+    this._readRequest = null;
+    this._lastReadAt = null;
+    this._refreshTimer = null;
+    this._readDirty = false;
+    this._dataSession = null;
+    this._registryEpoch = 0;
+    this._registryUnsubs = [];
+    this._disconnected = false;
 
     // UI State
     this.searchQuery = '';
@@ -644,13 +653,23 @@ class HaNetworkMap extends HTMLElement {
     } catch (e) {}
     if (!hass) return;
     if (hass?.language) this._lang = hass.language.startsWith('pl') ? 'pl' : 'en';
+    const previousStates = this._hass?.states;
+    const session = this._readSession(hass);
+    const sessionChanged = this._dataSession && !this._sameReadSession(this._dataSession, session);
     this._hass = hass;
+    this._dataSession = session;
+    if (sessionChanged) {
+      this._readEpoch++;
+      this._readRequest = null;
+      this._stopRegistryUpdates();
+    }
+    this._subscribeRegistryUpdates();
 
     if (!this._firstHassRender) {
       this._firstHassRender = true;
       // v5: no client-side subnet config / cached scan results. The
       // bundled Python integration owns the canonical device list and
-      // reachability data; we just pull it once on first hass connect.
+      // reachability data; subsequent HA events schedule bounded fresh reads.
       this._loadBindings();
       this._loadDevicePrefs();
       this._loadDeviceRegistry().then(() => this._reloadFromApi()).then(() => {
@@ -658,6 +677,8 @@ class HaNetworkMap extends HTMLElement {
       });
       return;
     }
+
+    if (sessionChanged || previousStates !== hass.states) this._queueDeviceRefresh();
 
     // Locale and scan permissions must not wait for editing or the data-render
     // throttle. Compare rendered scalars because HA may reuse a mutable user.
@@ -750,6 +771,46 @@ class HaNetworkMap extends HTMLElement {
     } catch (e) { console.debug('[ha-network-map] caught:', e); }
   }
 
+  _bindingAliases(device) {
+    return [...new Set([this._preferenceId(device), device.mac, device.key, device.ip, device.name].filter(Boolean))];
+  }
+
+  _bindingDevice(key) {
+    const matches = (this._integrationDevices || []).filter(d => d && this._bindingAliases(d).includes(key));
+    const ids = new Set(matches.map(d => this._preferenceId(d)));
+    return ids.size === 1 ? matches[0] : null;
+  }
+
+  _migrateBindings() {
+    let changed = false;
+    for (const device of this._integrationDevices || []) {
+      if (!device) continue;
+      const id = this._preferenceId(device);
+      const aliases = this._bindingAliases(device).filter(key => key !== id && this._bindingDevice(key) && this._preferenceId(this._bindingDevice(key)) === id);
+      const entity = this._bindings[id] || aliases.map(key => this._bindings[key]).find(Boolean);
+      if (!entity) continue;
+      if (this._bindings[id] !== entity) { this._bindings[id] = entity; changed = true; }
+      for (const key of aliases) if (Object.hasOwn(this._bindings, key)) { delete this._bindings[key]; changed = true; }
+    }
+    if (changed) this._saveBindings();
+  }
+
+  _setBinding(key, entity) {
+    const device = this._bindingDevice(key);
+    if (device) {
+      const id = this._preferenceId(device);
+      for (const alias of this._bindingAliases(device)) {
+        const owner = this._bindingDevice(alias);
+        if (owner && this._preferenceId(owner) === id) delete this._bindings[alias];
+      }
+      if (entity) this._bindings[id] = entity;
+    } else {
+      if (entity) this._bindings[key] = entity;
+      else delete this._bindings[key];
+    }
+    this._saveBindings();
+  }
+
   _loadDevicePrefs() {
     try {
       const saved = JSON.parse(localStorage.getItem('ha-network-map-device-prefs') || '{}');
@@ -839,32 +900,114 @@ class HaNetworkMap extends HTMLElement {
     }
   }
 
-  async _reloadFromApi() {
-    // Pull the canonical device list from the integration. Translates
-    // the integration's shape ({devices: [{ip, reachable, open_ports,
-    // ...}]}) into the legacy `_scanResults[ip] = bool` map so the
-    // existing renderer stays untouched, and stores the full row under
-    // `_integrationDevices` for the richer info the renderer can use.
-    if (!this._hass) return;
-    try {
-      const res = await this._hass.callWS({ type: 'ha_network_map/list_devices', include_non_network: this._includeNonNetwork });
-      const list = (res && res.devices) || [];
-      this._integrationDevices = list;
-      const reachMap = {};
-      for (const d of list) {
-        if (d && d.ip) reachMap[d.ip] = d.reachable === true;
-      }
-      this._scanResults = reachMap;
-      this._buildDeviceList();
-      this._listError = false;
-      this._scanError = null;
-    } catch (e) {
-      console.warn('[ha-network-map] list_devices failed:', e);
-      this._listError = true;
-      this._scanError = e?.code === 'unknown_command'
-        ? this._integrationMissingHint()
-        : this._t('listFailed') + (e?.message ? ' ' + e.message : '');
+  connectedCallback() {
+    this._disconnected = false;
+    if (this._hass && this._firstHassRender) {
+      this._subscribeRegistryUpdates();
+      this._queueDeviceRefresh();
     }
+  }
+
+  disconnectedCallback() {
+    this._disconnected = true;
+    this._readEpoch++;
+    this._readRequest = null;
+    this._readDirty = false;
+    clearTimeout(this._refreshTimer);
+    clearTimeout(this._renderTimer);
+    this._refreshTimer = null;
+    this._renderTimer = null;
+    this._renderScheduled = false;
+    this._stopRegistryUpdates();
+  }
+
+  _readSession(hass = this._hass) {
+    return { connection: hass?.connection, userId: hass?.user?.id, admin: hass?.user?.is_admin };
+  }
+
+  _sameReadSession(a, b) {
+    return a.connection === b.connection && a.userId === b.userId && a.admin === b.admin;
+  }
+
+  _stopRegistryUpdates() {
+    this._registryEpoch++;
+    this._registryConnection = null;
+    for (const unsubscribe of this._registryUnsubs) unsubscribe();
+    this._registryUnsubs = [];
+  }
+
+  _subscribeRegistryUpdates() {
+    const connection = this._hass?.connection;
+    if (!this.isConnected || this._disconnected || !connection?.subscribeEvents || this._registryConnection === connection) return;
+    this._registryConnection = connection;
+    const epoch = this._registryEpoch;
+    for (const type of ['device_registry_updated', 'entity_registry_updated']) {
+      Promise.resolve(connection.subscribeEvents(() => {
+        if (epoch === this._registryEpoch) this._queueDeviceRefresh();
+      }, type)).then(unsubscribe => {
+        if (epoch !== this._registryEpoch || this._disconnected) unsubscribe();
+        else this._registryUnsubs.push(unsubscribe);
+      }).catch(e => console.debug('[ha-network-map] Registry subscription unavailable', e));
+    }
+  }
+
+  _queueDeviceRefresh() {
+    if (!this.isConnected || this._disconnected || !this._hass?.callWS) return;
+    this._readDirty = true;
+    if (this._refreshTimer !== null || this._readRequest) return;
+    const elapsed = Date.now() - (this._lastReadAt ?? Date.now());
+    this._refreshTimer = setTimeout(async () => {
+      this._refreshTimer = null;
+      if (this._disconnected) return;
+      if (await this._reloadFromApi()) this._doRender();
+    }, Math.max(0, 5000 - elapsed));
+  }
+
+  _reloadFromApi() {
+    // Read-only canonical discovery. A burst or slow response gets at most one
+    // pending read per context; superseded sessions/filters never apply replies.
+    if (!this._hass?.callWS || this._disconnected) return Promise.resolve(false);
+    const hass = this._hass;
+    const session = this._readSession(hass);
+    const includeNonNetwork = this._includeNonNetwork;
+    const previous = this._readRequest;
+    if (previous && previous.epoch === this._readEpoch && previous.includeNonNetwork === includeNonNetwork && this._sameReadSession(previous.session, session)) return previous.promise;
+    const request = { epoch: ++this._readEpoch, session, includeNonNetwork };
+    this._readRequest = request;
+    this._lastReadAt = Date.now();
+    this._readDirty = false;
+    clearTimeout(this._refreshTimer);
+    this._refreshTimer = null;
+    const current = () => !this._disconnected && request.epoch === this._readEpoch && includeNonNetwork === this._includeNonNetwork && this._sameReadSession(session, this._readSession());
+    request.promise = (async () => {
+      try {
+        const res = await hass.callWS({ type: 'ha_network_map/list_devices', include_non_network: includeNonNetwork });
+        if (!current()) return false;
+        const list = Array.isArray(res?.devices) ? res.devices : [];
+        this._integrationDevices = list;
+        const reachMap = {};
+        for (const d of list) if (d?.ip) reachMap[d.ip] = d.reachable === true;
+        this._scanResults = reachMap;
+        this._buildDeviceList();
+        this._listError = false;
+        this._scanError = null;
+        return true;
+      } catch (e) {
+        if (!current()) return false;
+        console.warn('[ha-network-map] list_devices failed:', e);
+        this._listError = true;
+        this._scanError = e?.code === 'unknown_command'
+          ? this._integrationMissingHint()
+          : this._t('listFailed') + (e?.message ? ' ' + e.message : '');
+        return true;
+      } finally {
+        if (this._readRequest === request) {
+          this._readRequest = null;
+          if (this._readDirty) this._queueDeviceRefresh();
+        }
+      }
+    })();
+    return request.promise;
   }
 
   _categoryLabel(category) {
@@ -909,6 +1052,8 @@ class HaNetworkMap extends HTMLElement {
   }
 
   _buildDeviceList() {
+    const selectedId = this.selectedDevice?.preferenceId;
+    this._migrateBindings();
     this.devices = [];
     const seen = new Set();
     // The integration is the only discovery source. Mixing its rows with
@@ -942,11 +1087,12 @@ class HaNetworkMap extends HTMLElement {
           sources: d.sources || [],
           open_ports: d.open_ports || [],
           lastSeen: null,
-          binding: this._bindings[preferenceId] || this._bindings[dedupeKey] || this._bindings[d.ip] || this._bindings[d.name] || null
+          binding: this._bindings[preferenceId] || null
         });
       }
     }
 
+    if (selectedId) this.selectedDevice = this.devices.find(d => d.preferenceId === selectedId) || null;
     this._filterSort();
   }
 
@@ -1630,8 +1776,7 @@ class HaNetworkMap extends HTMLElement {
         if (trackerEntities.length > 0) {
           const choice = prompt((this._lang === 'pl' ? 'Wybierz ID encji:' : 'Select entity ID:') + '\n\n' + trackerEntities.join('\n'));
           if (choice && trackerEntities.includes(choice)) {
-            this._bindings[this.selectedDevice?.preferenceId || ip] = choice;
-            this._saveBindings();
+            this._setBinding(this.selectedDevice?.preferenceId || ip, choice);
             this._buildDeviceList();
             this._doRender();
           }
@@ -1675,8 +1820,7 @@ class HaNetworkMap extends HTMLElement {
         const key = btn.dataset.acceptSuggestion;
         const sug = this._suggestedBindings.find(s => s.key === key);
         if (sug) {
-          this._bindings[sug.deviceKey] = sug.entityId;
-          this._saveBindings();
+          this._setBinding(sug.deviceKey, sug.entityId);
           this._suggestedBindings = this._suggestedBindings.filter(s => s.key !== key);
           this._buildDeviceList();
           this._doRender();
@@ -1695,8 +1839,7 @@ class HaNetworkMap extends HTMLElement {
     this.shadowRoot.querySelectorAll('[data-unbind]').forEach(btn => {
       btn.addEventListener('click', () => {
         const key = btn.dataset.unbind;
-        delete this._bindings[key];
-        this._saveBindings();
+        this._setBinding(key, null);
         this._buildDeviceList();
         this._doRender();
       });
@@ -1710,8 +1853,7 @@ class HaNetworkMap extends HTMLElement {
           const entityId = deviceSelect.value;
           const ip = prompt(this._lang === 'pl' ? 'Wprowadź IP lub nazwę urządzenia:' : 'Enter device IP or name:');
           if (ip) {
-            this._bindings[ip] = entityId;
-            this._saveBindings();
+            this._setBinding(ip, entityId);
             deviceSelect.value = '';
             this._buildDeviceList();
             this._doRender();
