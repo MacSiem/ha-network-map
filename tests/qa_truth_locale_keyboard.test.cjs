@@ -72,3 +72,28 @@ test('Polish categories, pagination, detail entity and scan time labels translat
     assert.equal(card.shadowRoot.querySelector('#deviceCategory').value, 'Other');
   } finally { dom.window.close(); }
 });
+
+test('failed reads offer a retry that only reloads the device list', async () => {
+  const { dom, card } = fixture();
+  try {
+    card._hass.callWS = async () => { throw { code: 'list_failed', message: 'QA offline' }; };
+    await card._reloadFromApi(); card._doRender();
+    const retry = card.shadowRoot.querySelector('#retryDevices');
+    assert.ok(retry, 'Household users need a read-only retry without triggering a scan');
+    const calls = [];
+    card._hass.callWS = async command => { calls.push(command.type); return { devices: card._integrationDevices }; };
+    retry.click(); await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    assert.deepEqual(calls, ['ha_network_map/list_devices']);
+    assert.equal(card.shadowRoot.querySelector('#retryDevices'), null);
+  } finally { dom.window.close(); }
+});
+test('category override updates the device icon as well as its label', () => {
+  const { dom, card } = fixture();
+  try {
+    const id = card.devices[0].preferenceId;
+    card._devicePrefs[id] = { category: 'Camera' }; card._buildDeviceList();
+    assert.equal(card.devices[0].category, 'Camera'); assert.equal(card.devices[0].icon, '📷');
+    card.activeTab = 'topology'; card._doRender();
+    assert.ok(card.shadowRoot.querySelector('[aria-label="QA 0"]').textContent.includes('📷'));
+  } finally { dom.window.close(); }
+});

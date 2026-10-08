@@ -333,3 +333,24 @@ class ScanBoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(network._devices["qa"].ip, "127.0.0.2")
         self.assertIsNone(network._devices["qa"].reachable)
         self.assertEqual(network._devices["qa"].open_ports, [])
+
+    async def test_busy_scan_reports_queued_and_completed_scan_reports_finished(self):
+        network = self.make_scanner()
+        started, finish = asyncio.Event(), asyncio.Event()
+        calls = []
+        async def probe(*args):
+            calls.append(args)
+            started.set()
+            await finish.wait()
+            return "open"
+        network._tcp_status = probe
+        pending = asyncio.create_task(network.scan(ports=[8123]))
+        await started.wait()
+        busy = await network.scan(ports=[8123])
+        self.assertTrue(busy["queued"])
+        self.assertIsNone(busy["last_scan_finished_at"])
+        self.assertEqual(len(calls), 1)
+        finish.set()
+        completed = await pending
+        self.assertFalse(completed["queued"])
+        self.assertIsNotNone(completed["last_scan_finished_at"])
