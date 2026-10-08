@@ -73,8 +73,8 @@ class FrontendRegistrationTests(unittest.TestCase):
         card_header = CARD_PATH.read_text(encoding="utf-8").splitlines()[0]
 
         self.assertEqual(hacs["homeassistant"], "2025.2.0")
-        self.assertEqual(manifest["version"], "5.0.19")
-        self.assertIn("v5.0.19", card_header)
+        self.assertEqual(manifest["version"], "5.0.20")
+        self.assertIn("v5.0.20", card_header)
 
     def test_card_does_not_install_cross_card_injectors(self) -> None:
         source = CARD_PATH.read_text(encoding="utf-8")

@@ -787,9 +787,12 @@ class HaNetworkMap extends HTMLElement {
       if (!device) continue;
       const id = this._preferenceId(device);
       const aliases = this._bindingAliases(device).filter(key => key !== id && this._bindingDevice(key) && this._preferenceId(this._bindingDevice(key)) === id);
-      const entity = this._bindings[id] || aliases.map(key => this._bindings[key]).find(Boolean);
-      if (!entity) continue;
-      if (this._bindings[id] !== entity) { this._bindings[id] = entity; changed = true; }
+      // A persisted null records explicit unbind, including ambiguous aliases
+      // which may only become uniquely identifiable after another row disappears.
+      const explicit = Object.hasOwn(this._bindings, id);
+      const entity = explicit ? this._bindings[id] : aliases.map(key => this._bindings[key]).find(Boolean);
+      if (!entity && !explicit) continue;
+      if (!explicit) { this._bindings[id] = entity; changed = true; }
       for (const key of aliases) if (Object.hasOwn(this._bindings, key)) { delete this._bindings[key]; changed = true; }
     }
     if (changed) this._saveBindings();
@@ -803,7 +806,7 @@ class HaNetworkMap extends HTMLElement {
         const owner = this._bindingDevice(alias);
         if (owner && this._preferenceId(owner) === id) delete this._bindings[alias];
       }
-      if (entity) this._bindings[id] = entity;
+      this._bindings[id] = entity || null;
     } else {
       if (entity) this._bindings[key] = entity;
       else delete this._bindings[key];
@@ -1169,9 +1172,9 @@ class HaNetworkMap extends HTMLElement {
       '</div>' +
       '</div>' +
       '<div class="tabs">' +
-      '<button class="tab-btn ' + (this.activeTab === 'devices' ? 'active' : '') + '" data-tab="devices">' + this._t('devicesTab') + '</button>' +
-      '<button class="tab-btn ' + (this.activeTab === 'topology' ? 'active' : '') + '" data-tab="topology">' + this._t('topologyTab') + '</button>' +
-      '<button class="tab-btn ' + (this.activeTab === 'bindings' ? 'active' : '') + '" data-tab="bindings">' + this._t('bindingsTab') + '</button>' +
+      '<button class="tab-btn ' + (this.activeTab === 'devices' ? 'active' : '') + '" id="tab-devices" data-tab="devices">' + this._t('devicesTab') + '</button>' +
+      '<button class="tab-btn ' + (this.activeTab === 'topology' ? 'active' : '') + '" id="tab-topology" data-tab="topology">' + this._t('topologyTab') + '</button>' +
+      '<button class="tab-btn ' + (this.activeTab === 'bindings' ? 'active' : '') + '" id="tab-bindings" data-tab="bindings">' + this._t('bindingsTab') + '</button>' +
       '</div>' +
       (!this._canScan() ? '<div role="status" style="margin:8px 12px;padding:10px 14px;font-size:13px;">' + _esc(this._t('scanAdminRequired')) + '</div>' : '') +
       (this._scanError ? '<div style="margin:8px 12px;padding:10px 14px;background:var(--bento-error-light);color:var(--bento-error);border:1px solid var(--bento-error-border);border-radius:var(--bento-radius-sm);font-size:13px;">⚠️ ' + _esc(this._scanError) + (this._listError ? ' <button type="button" class="rb" id="retryDevices">' + this._t('retry') + '</button>' : '') + '</div>' : '') +
@@ -1193,7 +1196,7 @@ class HaNetworkMap extends HTMLElement {
     this.shadowRoot.innerHTML = html + support;
     this._bindEvents();
     if (_fid) {
-      const _el = this.shadowRoot.getElementById(_fid);
+      const _el = this.shadowRoot.getElementById(_fid) || ((_fid.startsWith('device-detail-') || _fid.startsWith('topology-device-')) ? this.shadowRoot.getElementById('sI') || this.shadowRoot.getElementById('tab-' + this.activeTab) : null);
       if (_el) { try { _el.focus({ preventScroll: true }); if (_ss != null && _el.setSelectionRange) _el.setSelectionRange(_ss, _se, _sd || 'none'); } catch (e) {} }
     }
   }
@@ -1251,7 +1254,7 @@ class HaNetworkMap extends HTMLElement {
     let rows = '';
     items.forEach((d, i) => {
       const dot = d.reachable === true ? '<span style="color:#10B981">\u25CF</span>' : d.reachable === false ? '<span style="color:#EF4444">\u25CF</span>' : '<span style="color:#94A3B8">\u2014</span>';
-      rows += '<tr data-i="' + i + '"><td><button type="button" class="device-detail-button"><span class="di" aria-hidden="true">' + _esc(d.icon) + '</span><span class="dn">' + _esc(d.name) + '</span></button></td>' +
+      rows += '<tr data-i="' + i + '"><td><button type="button" class="device-detail-button" id="device-detail-' + _esc(d.preferenceId) + '"><span class="di" aria-hidden="true">' + _esc(d.icon) + '</span><span class="dn">' + _esc(d.name) + '</span></button></td>' +
         '<td>' + _esc(this._categoryLabel(d.category)) + '</td>' +
         '<td class="mn">' + _esc(d.ip || '—') + '</td>' +
         '<td class="mn">' + _esc(d.mac || '—') + '</td>' +
@@ -1272,9 +1275,9 @@ class HaNetworkMap extends HTMLElement {
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 
     if (tp > 1) {
-      h += '<div class="pg"><button class="pb" data-p="' + (pg - 1) + '"' + (pg <= 1 ? ' disabled' : '') + '>‹ ' + this._t('previous') + '</button>' +
+      h += '<div class="pg"><button class="pb" id="page-previous" data-p="' + (pg - 1) + '"' + (pg <= 1 ? ' disabled' : '') + '>‹ ' + this._t('previous') + '</button>' +
         '<span class="pi2">' + pg + ' / ' + tp + ' (' + this.filteredDevices.length + ')</span>' +
-        '<button class="pb" data-p="' + (pg + 1) + '"' + (pg >= tp ? ' disabled' : '') + '>' + this._t('next') + ' ›</button></div>';
+        '<button class="pb" id="page-next" data-p="' + (pg + 1) + '"' + (pg >= tp ? ' disabled' : '') + '>' + this._t('next') + ' ›</button></div>';
     }
 
     return h;
@@ -1423,7 +1426,7 @@ class HaNetworkMap extends HTMLElement {
       const stroke   = isUnreach ? COLOR_UNREACHABLE_STROKE : catColor.stroke;
       const fillOp   = isUnreach ? '0.08' : '0.18';
 
-      svg += '<g tabindex="0" role="img" aria-label="' + _esc(d.name || d.ip || '') + '"><title>' + _esc(d.name || d.ip || '') + '</title>';
+      svg += '<g id="topology-device-' + _esc(d.preferenceId) + '" tabindex="0" role="img" aria-label="' + _esc(d.name || d.ip || '') + '"><title>' + _esc(d.name || d.ip || '') + '</title>';
       svg += '<circle cx="' + d._x + '" cy="' + d._y + '" r="' + NODE_R + '"' +
         ' fill="' + fill + '" fill-opacity="' + fillOp + '"' +
         ' stroke="' + stroke + '" stroke-width="' + (isReach ? '2' : '1.5') + '"' +
@@ -1584,7 +1587,7 @@ class HaNetworkMap extends HTMLElement {
     }
 
     // Current bindings
-    const currentBindings = Object.entries(this._bindings);
+    const currentBindings = Object.entries(this._bindings).filter(([, entityId]) => entityId);
     if (currentBindings.length > 0) {
       h += '<div class="tree-group"><div class="tree-group-header">' +
         '<span class="tree-toggle">▼</span>' +
@@ -1597,7 +1600,7 @@ class HaNetworkMap extends HTMLElement {
         h += '<div class="tree-item">' +
           '<span class="tree-item-name">' + _esc(devName) + '</span>' +
           '<span style="color:var(--bento-text-secondary);flex:1">' + _esc(entityId) + '</span>' +
-          '<button class="rb" style="font-size:11px" data-unbind="' + _esc(key) + '">✕</button>' +
+          '<button class="rb" style="font-size:11px" id="unbind-' + _esc(key) + '" data-unbind="' + _esc(key) + '">✕</button>' +
           '</div>';
       });
 
