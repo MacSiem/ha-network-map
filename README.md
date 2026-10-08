@@ -57,11 +57,11 @@ HA device and entity pages. These choices are stored in this browser's
 
 | Light | Dark |
 |---|---|
-| ![Devices tab in English, light theme at 200% Chrome zoom](docs/screenshots/card-map-light-5.0.19.jpg) | ![Devices tab in Polish, dark theme](docs/screenshots/card-map-dark-5.0.19.jpg) |
+| ![Devices tab in English, administrator panel in light theme](docs/screenshots/card-map-light-5.0.20.jpg) | ![Devices tab in Polish, household Sections card in dark theme](docs/screenshots/card-map-dark-5.0.20.jpg) |
 
-*Captured from 5.0.19 running in Home Assistant with synthetic QA devices.
-The English light view uses actual Chrome zoom at 200%; the Polish dark view
-uses the normal wide layout. These screenshots contain no household data.
+*Captured from 5.0.20 running in Home Assistant with synthetic QA devices.
+The English light view shows the administrator panel; the Polish dark view
+shows a household card in a Sections dashboard. These screenshots contain no household data.
 The Topology tab renders the same devices as a hub-and-spoke graph. Dark mode
 follows your Home Assistant theme.*
 
