@@ -7,6 +7,7 @@ function fixture(language = 'en') {
   const dom = new JSDOM('', { runScripts: 'dangerously', url: 'http://localhost/' });
   dom.window.eval(readFileSync(join(__dirname, '..', 'custom_components/ha_network_map/www/ha-network-map.js'), 'utf8'));
   const card = dom.window.document.createElement('ha-network-map');
+  dom.window.document.body.append(card);
   card.setConfig({ title: 'Network QA', show_support: false });
   card._hass = { states: {}, language, user: { is_admin: true } }; card._lang = language;
   card._integrationDevices = Array.from({ length: 21 }, (_, i) => ({ key: 'qa' + i, name: 'QA ' + i, mac: '02:00:00:00:00:' + i.toString(16).padStart(2, '0'), category: 'Other', entity_ids: [] }));
