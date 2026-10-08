@@ -556,7 +556,7 @@ class HaNetworkMap extends HTMLElement {
         deviceName: 'Device Name', ipAddress: 'IP Address', macAddress: 'MAC', manufacturer: 'Manufacturer',
         reachable: 'Reachable', haEntity: 'HA Entity', totalDevices: 'Total', reachableCount: 'Reachable',
         unreachableCount: 'Unreachable', boundCount: 'Bound to HA',
-        noDevicesFound: 'No devices found. Start a network scan.',
+        noDevicesFound: 'No matching devices in Home Assistant. Check the filters or add a device with a MAC/IP address.',
         scanningNetwork: 'Scanning network...', scanProgress: 'Progress',
         scanAdminRequired: 'Only an administrator can start a network scan.',
         // Topology tab
@@ -576,6 +576,9 @@ class HaNetworkMap extends HTMLElement {
         category: 'Category', status: 'Status', lastSeen: 'Last Seen',
         showOtherDevices: 'Show devices without MAC/IP', hideDevice: 'Hide device', showDevice: 'Show device', showHidden: 'Show hidden',
         openDevice: 'Open HA device', openEntity: 'Open HA entity',
+        entity: 'Entity', scanned: 'Last scan:', previous: 'Previous', next: 'Next', unknownStatus: 'Not measured',
+        listFailed: 'Could not load devices. Try again.',
+        categoryPhone: 'Phone', categoryTablet: 'Tablet', categoryComputer: 'Computer', categoryRouter: 'Router', categoryCamera: 'Camera', categorySmartHome: 'Smart Home', categoryMedia: 'Media', categoryOther: 'Other',
       },
       pl: {
         // Tabs
@@ -585,7 +588,7 @@ class HaNetworkMap extends HTMLElement {
         deviceName: 'Nazwa urządzenia', ipAddress: 'Adres IP', macAddress: 'MAC', manufacturer: 'Producent',
         reachable: 'Dostępne', haEntity: 'Encja HA', totalDevices: 'Razem', reachableCount: 'Dostępne',
         unreachableCount: 'Niedostępne', boundCount: 'Powiązane z HA',
-        noDevicesFound: 'Brak urządzeń. Uruchom skanowanie sieci.',
+        noDevicesFound: 'Brak pasujących urządzeń w Home Assistant. Sprawdź filtry lub dodaj urządzenie z adresem MAC/IP.',
         scanningNetwork: 'Skanowanie sieci...', scanProgress: 'Postęp',
         scanAdminRequired: 'Tylko administrator może uruchomić skanowanie sieci.',
         // Topology tab
@@ -605,6 +608,9 @@ class HaNetworkMap extends HTMLElement {
         category: 'Kategoria', status: 'Stan', lastSeen: 'Ostatnio widoczne',
         showOtherDevices: 'Pokaż urządzenia bez MAC/IP', hideDevice: 'Ukryj urządzenie', showDevice: 'Pokaż urządzenie', showHidden: 'Pokaż ukryte',
         openDevice: 'Otwórz urządzenie HA', openEntity: 'Otwórz encję HA',
+        entity: 'Encja', scanned: 'Ostatni skan:', previous: 'Poprzednia', next: 'Następna', unknownStatus: 'Nie zmierzono',
+        listFailed: 'Nie udało się pobrać urządzeń. Spróbuj ponownie.',
+        categoryPhone: 'Telefon', categoryTablet: 'Tablet', categoryComputer: 'Komputer', categoryRouter: 'Router', categoryCamera: 'Kamera', categorySmartHome: 'Inteligentny dom', categoryMedia: 'Multimedia', categoryOther: 'Inne',
       }
     };
   }
@@ -816,9 +822,9 @@ class HaNetworkMap extends HTMLElement {
     try {
       const status = await this._hass.callWS({ type: 'ha_network_map/scan' });
       this._lastScanStatus = status || {};
-      this._lastScanTime = (status && status.last_scan_finished_at)
+      this._lastScanTime = Number.isFinite(status?.last_scan_finished_at) && status.last_scan_finished_at > 0
         ? Math.floor(status.last_scan_finished_at * 1000)
-        : Date.now();
+        : null;
       await this._reloadFromApi();
     } catch (e) {
       console.warn('[ha-network-map] scan failed:', e);
@@ -847,10 +853,18 @@ class HaNetworkMap extends HTMLElement {
       }
       this._scanResults = reachMap;
       this._buildDeviceList();
+      this._scanError = null;
     } catch (e) {
       console.warn('[ha-network-map] list_devices failed:', e);
-      this._scanError = this._integrationMissingHint();
+      this._scanError = e?.code === 'unknown_command'
+        ? this._integrationMissingHint()
+        : this._t('listFailed') + (e?.message ? ' ' + e.message : '');
     }
+  }
+
+  _categoryLabel(category) {
+    const keys = { Phone: 'categoryPhone', Tablet: 'categoryTablet', Computer: 'categoryComputer', Router: 'categoryRouter', Camera: 'categoryCamera', 'Smart Home': 'categorySmartHome', Media: 'categoryMedia', Other: 'categoryOther' };
+    return keys[category] ? this._t(keys[category]) : category;
   }
 
   _integrationMissingHint() {
@@ -998,7 +1012,7 @@ class HaNetworkMap extends HTMLElement {
       '<div class="card-header-wrapper">' +
       '<div class="card-header">📡 ' + _esc(this._title) + '</div>' +
       '<div class="header-footer">' +
-      (this._lastScanTime ? '<span style="font-size:11px;color:var(--bento-text-secondary);">Scanned: ' + new Date(this._lastScanTime).toLocaleTimeString() + '</span>' : '') +
+      (this._lastScanTime ? '<span style="font-size:11px;color:var(--bento-text-secondary);">' + this._t('scanned') + ' ' + new Date(this._lastScanTime).toLocaleTimeString() + '</span>' : '') +
       '<button class="rb" id="rescanBtn"' + (!this._canScan() || this._scanInProgress ? ' disabled' : '') + '>🔄 ' + (this._lang === 'pl' ? 'Skanuj' : 'Rescan') + '</button>' +
       '</div>' +
       '</div>' +
@@ -1069,7 +1083,7 @@ class HaNetworkMap extends HTMLElement {
       h += this._renderDeviceDetail(this.selectedDevice);
     }
 
-    const catOpts = cats.map(c => '<option value="' + _esc(c) + '"' + (this._catFilter === c ? ' selected' : '') + '>' + _esc(c) + '</option>').join('');
+    const catOpts = cats.map(c => '<option value="' + _esc(c) + '"' + (this._catFilter === c ? ' selected' : '') + '>' + _esc(this._categoryLabel(c)) + '</option>').join('');
     h += '<div class="toolbar"><input type="text" class="si" id="sI" placeholder="' + this._t('searchPlaceholder') + '" value="' + _esc(this.searchQuery || '') + '">' +
       '<select class="fs" id="cF"><option value="all">' + this._t('allCategories') + '</option>' + catOpts + '</select>' +
       '<label><input id="showOther" type="checkbox"' + (this._includeNonNetwork ? ' checked' : '') + '> ' + this._t('showOtherDevices') + '</label>' +
@@ -1086,7 +1100,7 @@ class HaNetworkMap extends HTMLElement {
     items.forEach((d, i) => {
       const dot = d.reachable === true ? '<span style="color:#10B981">\u25CF</span>' : d.reachable === false ? '<span style="color:#EF4444">\u25CF</span>' : '<span style="color:#94A3B8">\u2014</span>';
       rows += '<tr data-i="' + i + '"><td><button type="button" class="device-detail-button"><span class="di" aria-hidden="true">' + _esc(d.icon) + '</span><span class="dn">' + _esc(d.name) + '</span></button></td>' +
-        '<td>' + _esc(d.category) + '</td>' +
+        '<td>' + _esc(this._categoryLabel(d.category)) + '</td>' +
         '<td class="mn">' + _esc(d.ip || '—') + '</td>' +
         '<td class="mn">' + _esc(d.mac || '—') + '</td>' +
         '<td>' + _esc(d.manufacturer || '—') + '</td>' +
@@ -1096,19 +1110,19 @@ class HaNetworkMap extends HTMLElement {
     });
 
     h += '<div class="tw"><table><thead><tr>' +
-      '<th data-s="name">' + this._t('deviceName') + sa('name') + '</th>' +
-      '<th data-s="category">' + this._t('category') + sa('category') + '</th>' +
-      '<th data-s="ip">' + this._t('ipAddress') + sa('ip') + '</th>' +
-      '<th data-s="mac">' + this._t('macAddress') + '</th>' +
-      '<th data-s="manufacturer">' + this._t('manufacturer') + '</th>' +
-      '<th data-s="reachable">' + this._t('reachable') + sa('reachable') + '</th>' +
+      '<th data-s="name" aria-sort="' + (this.sortBy === 'name' ? (this.sortDesc ? 'descending' : 'ascending') : 'none') + '"><button type="button" id="sort-name" style="font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:inherit">' + this._t('deviceName') + sa('name') + '</button></th>' +
+      '<th data-s="category" aria-sort="' + (this.sortBy === 'category' ? (this.sortDesc ? 'descending' : 'ascending') : 'none') + '"><button type="button" id="sort-category" style="font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:inherit">' + this._t('category') + sa('category') + '</button></th>' +
+      '<th data-s="ip" aria-sort="' + (this.sortBy === 'ip' ? (this.sortDesc ? 'descending' : 'ascending') : 'none') + '"><button type="button" id="sort-ip" style="font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:inherit">' + this._t('ipAddress') + sa('ip') + '</button></th>' +
+      '<th data-s="mac" aria-sort="' + (this.sortBy === 'mac' ? (this.sortDesc ? 'descending' : 'ascending') : 'none') + '"><button type="button" id="sort-mac" style="font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:inherit">' + this._t('macAddress') + sa('mac') + '</button></th>' +
+      '<th data-s="manufacturer" aria-sort="' + (this.sortBy === 'manufacturer' ? (this.sortDesc ? 'descending' : 'ascending') : 'none') + '"><button type="button" id="sort-manufacturer" style="font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:inherit">' + this._t('manufacturer') + sa('manufacturer') + '</button></th>' +
+      '<th data-s="reachable" aria-sort="' + (this.sortBy === 'reachable' ? (this.sortDesc ? 'descending' : 'ascending') : 'none') + '"><button type="button" id="sort-reachable" style="font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:inherit">' + this._t('reachable') + sa('reachable') + '</button></th>' +
       '<th>' + this._t('haEntity') + '</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 
     if (tp > 1) {
-      h += '<div class="pg"><button class="pb" data-p="' + (pg - 1) + '"' + (pg <= 1 ? ' disabled' : '') + '>‹ Prev</button>' +
+      h += '<div class="pg"><button class="pb" data-p="' + (pg - 1) + '"' + (pg <= 1 ? ' disabled' : '') + '>‹ ' + this._t('previous') + '</button>' +
         '<span class="pi2">' + pg + ' / ' + tp + ' (' + this.filteredDevices.length + ')</span>' +
-        '<button class="pb" data-p="' + (pg + 1) + '"' + (pg >= tp ? ' disabled' : '') + '>Next ›</button></div>';
+        '<button class="pb" data-p="' + (pg + 1) + '"' + (pg >= tp ? ' disabled' : '') + '>' + this._t('next') + ' ›</button></div>';
     }
 
     return h;
@@ -1117,18 +1131,18 @@ class HaNetworkMap extends HTMLElement {
   _renderDeviceDetail(d) {
     let rows = [
       [this._t('deviceName'), _esc(d.icon) + ' ' + _esc(d.name)],
-      [this._t('category'), _esc(d.category)],
-      [this._t('status'), d.reachable === null ? 'N/A' : d.reachable ? this._t('reachableStatus') : this._t('unreachableStatus')],
+      [this._t('category'), _esc(this._categoryLabel(d.category))],
+      [this._t('status'), d.reachable == null ? this._t('unknownStatus') : d.reachable ? this._t('reachableStatus') : this._t('unreachableStatus')],
       [this._t('ipAddress'), _esc(d.ip || '—')],
       [this._t('macAddress'), _esc(d.mac || '—')]
     ];
     if (d.manufacturer) rows.push([this._t('manufacturer'), _esc(d.manufacturer + (d.model ? ' ' + d.model : ''))]);
-    if (d.entity_id) rows.push(['Entity', _esc(d.entity_id)]);
+    if (d.entity_id) rows.push([this._t('entity'), _esc(d.entity_id)]);
 
     const rh = rows.map(r => '<div class="dr"><span class="dl">' + r[0] + '</span><span class="dv">' + r[1] + '</span></div>').join('');
     const bindHtml = d.reachable ? '<button class="rb" id="bindBtn" data-ip="' + _esc(d.ip || d.name) + '">🔗 ' + this._t('bind') + '</button>' : '';
     const categories = ['Phone', 'Tablet', 'Computer', 'Router', 'Camera', 'Smart Home', 'Media', 'Other'];
-    const categorySelect = '<label>' + this._t('category') + ' <select id="deviceCategory">' + categories.map(c => '<option value="' + _esc(c) + '"' + (d.category === c ? ' selected' : '') + '>' + _esc(c) + '</option>').join('') + '</select></label>';
+    const categorySelect = '<label>' + this._t('category') + ' <select id="deviceCategory">' + categories.map(c => '<option value="' + _esc(c) + '"' + (d.category === c ? ' selected' : '') + '>' + _esc(this._categoryLabel(c)) + '</option>').join('') + '</select></label>';
     const links = (d.device_id ? '<a href="/config/devices/device/' + encodeURIComponent(d.device_id) + '">' + this._t('openDevice') + '</a> ' : '') +
       (d.entity_id ? '<button type="button" class="rb" id="openEntity" data-entity="' + _esc(d.entity_id) + '">' + this._t('openEntity') + '</button>' : '');
     const hidden = !!this._devicePrefs[d.preferenceId]?.hidden;
@@ -1301,7 +1315,7 @@ class HaNetworkMap extends HTMLElement {
         ' fill="' + catColor.fill + '">+' + g.count + '</text>';
       svg += '<text x="' + g._x + '" y="' + (g._y + SUMMARY_R + 11) + '"' +
         ' text-anchor="middle" font-size="9" font-family="Inter,system-ui,sans-serif"' +
-        ' fill="var(--bento-text-secondary)">' + _esc(g.category) + '</text>';
+        ' fill="var(--bento-text-secondary)">' + _esc(this._categoryLabel(g.category)) + '</text>';
     });
 
     // Hub node (router / HA gateway)
@@ -1356,7 +1370,7 @@ class HaNetworkMap extends HTMLElement {
       catKey += '<span style="display:flex;align-items:center;gap:4px;font-size:10px;' +
         'color:var(--bento-text-secondary);background:var(--bento-bg);' +
         'border:1px solid var(--bento-border);border-radius:var(--bento-radius-pill);padding:2px 8px;">' +
-        (catIcons[cat] || '📡') + ' ' + _esc(cat) + '</span>';
+        (catIcons[cat] || '📡') + ' ' + _esc(this._categoryLabel(cat)) + '</span>';
     });
     catKey += '</div>';
 
