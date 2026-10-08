@@ -176,11 +176,14 @@ async def async_register_card(hass: HomeAssistant) -> str:
         created = await resources.async_create_item({"res_type": "module", "url": url})
         if not isinstance(created.get("id"), str) or not created["id"]:
             raise ValueError("Lovelace did not return a created resource ID")
+        record = _receipt(created)
         try:
-            await state.save([_receipt(created)])
+            await state.save([record])
         except Exception:
-            # Only this returned ID is known to be ours. Never search by URL.
-            await resources.async_delete_item(created["id"])
+            # Store I/O yields; a user may have edited this same ID meanwhile.
+            current = next((item for item in resources.async_items() if item["id"] == record["id"]), None)
+            if current is not None and _receipt(current) == record:
+                await resources.async_delete_item(record["id"])
             raise
         return "resource"
 

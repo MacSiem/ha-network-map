@@ -2,6 +2,7 @@
 
 ## 5.0.21 (2026-10-08)
 
+- Preserve a resource edited during an ownership write failure; rollback rechecks its current ID, URL and type before deletion.
 - Preserve manually added Lovelace resources, including duplicate integration URLs and HACS card copies, through setup, upgrade and unload.
 - Persist creation receipts with resource ID, URL and type; update or remove only still-owned resources, and relinquish ownership after a user edit.
 - Serialize resource and integration lifecycle changes, confirm Store writes and retain ownership after failed cleanup so normal setup/unload can recover.
