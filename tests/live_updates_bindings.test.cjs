@@ -37,12 +37,12 @@ test('ordinary HA state updates read fresh canonical rows without reload or filt
   const f = fixture();
   try {
     f.card.hass = f.hass; await flush();
-    assert.match(f.card.shadowRoot.querySelector('.content').textContent, /QA router/);
+    assert.match(f.card.shadowRoot.querySelector('.card').textContent, /QA router/);
     f.setPayload([row('Renamed router', '192.0.2.2')]);
     f.card.hass = { ...f.hass, states: { 'device_tracker.a': { state: 'home', attributes: { ip: '192.0.2.2' } } } };
     await f.advance();
-    assert.match(f.card.shadowRoot.querySelector('.content').textContent, /Renamed router/);
-    assert.match(f.card.shadowRoot.querySelector('.content').textContent, /192\.0\.2\.2/);
+    assert.match(f.card.shadowRoot.querySelector('.card').textContent, /Renamed router/);
+    assert.match(f.card.shadowRoot.querySelector('.card').textContent, /192\.0\.2\.2/);
     assert.equal(f.calls.filter(c => c.type.endsWith('/list_devices')).length, 2);
     assert.ok(f.calls.every(c => !c.type.endsWith('/scan')));
   } finally { f.close(); }
@@ -62,14 +62,14 @@ test('registry events refresh rows; state bursts are throttled and preserve sear
     await f.advance();
     assert.equal(f.calls.filter(c => c.type.endsWith('/list_devices')).length, 2);
     assert.equal(f.card._currentPage, 3); assert.equal(f.card.searchQuery, 'QA');
-    assert.match(f.card.shadowRoot.querySelector('.content').textContent, /fresh/);
+    assert.match(f.card.shadowRoot.querySelector('.card').textContent, /fresh/);
     assert.equal(f.card.shadowRoot.activeElement.id, 'sI');
     assert.equal(f.card.shadowRoot.activeElement.selectionDirection, 'backward');
     assert.ok(f.callbacks.has('device_registry_updated'));
     assert.ok(f.callbacks.has('entity_registry_updated'));
     f.setPayload(changed.map(d => ({ ...d, name: d.name + ' registry' })));
     f.callbacks.get('device_registry_updated')({ data: { action: 'update' } }); await f.advance();
-    assert.match(f.card.shadowRoot.querySelector('.content').textContent, /registry/);
+    assert.match(f.card.shadowRoot.querySelector('.card').textContent, /registry/);
     f.card.remove(); await flush();
     assert.equal(f.callbacks.size, 0);
     const count = f.calls.length; await f.advance(); assert.equal(f.calls.length, count);
