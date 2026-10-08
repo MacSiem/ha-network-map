@@ -75,6 +75,9 @@ as a hub-and-spoke graph. Dark mode follows your Home Assistant theme.*
 5. Administrators can open **Network Map** in the sidebar. The Lovelace card is
    registered automatically — no resource entry needed.
 
+Network Map is also available in the default HACS Integration catalog.
+Search for **Network Map**; custom repository registration is optional.
+
 If you previously installed v4 as a Lovelace plugin, remove the old
 `/local/community/ha-network-map/...` resource entry under *Dashboards →
 Resources* — it's superseded by `/ha_network_map/ha-network-map.js`, which
@@ -144,7 +147,7 @@ action:
       max_concurrent: 8
 ```
 
-## Privacy
+## Privacy and data
 
 - All active probing happens on the Home Assistant host. The browser never
   fires TCP/HTTP probes against LAN IPs.
@@ -152,8 +155,13 @@ action:
   scanning does not leave your LAN unless you explicitly set
   `include_public_ips: true` on a call, and even then the connection
   originates from the HA host, not a third-party service.
-- Device data stays inside Home Assistant — the integration only reads HA's
-  own registries and discovery caches; nothing is sent externally.
+- Device names, addresses, categories and entity links come from Home Assistant's
+  registries, states and optional discovery caches. Reading the map sends no
+  data to a third-party service. Every logged-in household user can read it.
+- Explicit scans open TCP connections from the HA host. Enabling
+  `include_public_ips: true` also permits connections to public addresses;
+  the destination then sees the HA host's network address. No application
+  payload, credentials or telemetry are sent by the probe.
 - The card uses browser `localStorage` for intro dismissal, bindings, hidden
   device IDs and categories. Scan results are not persisted in the browser.
 - No telemetry, no analytics, no CDN-hosted assets.
@@ -183,9 +191,9 @@ IoT devices, printers and Modbus gear that expose none of the scanned ports
 still show as reachable.
 
 **Does this send data anywhere?**
-No. Everything stays inside your Home Assistant instance — no telemetry, no
-CDN assets, no external network calls beyond the probes you trigger against
-your own LAN.
+No. Reading the map stays within Home Assistant. There is no telemetry or CDN
+asset loading. An explicit scan connects to local addresses by default;
+`include_public_ips: true` also permits connections to public addresses.
 
 ## Changelog
 
