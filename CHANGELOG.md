@@ -11,7 +11,7 @@
 - Validate timeout, concurrency, public-IP opt-in and ports at the shared scan boundary. The scan service now accepts its documented options with the same schema as WebSocket requests.
 - Preserve legacy IP bindings and keep new device bindings through IP changes using the stable device ID.
 - Ignore results for removed devices or changed IPs during scans, preserving correct reachability.
-- Verify the runtime against HA 2025.2.0, stable 2026.10.0 and 2026.10.0b4.
+- Verify the runtime against HA 2025.2.0, stable 2026.10.0 and current beta 2026.10.0b7.
 
 - Update existing English/Polish labels and administrator scan controls immediately when Home Assistant changes language or permissions, including while editing and during the render throttle. Preserve search text, focus and the full selection.
 
