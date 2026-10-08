@@ -57,12 +57,17 @@ HA device and entity pages. These choices are stored in this browser's
 
 | Light | Dark |
 |---|---|
-| ![Devices tab, light theme](docs/screenshots/card-map-light.png) | ![Devices tab, dark theme](docs/screenshots/card-map-dark.png) |
+| ![Devices tab in English, light theme at 200% Chrome zoom](docs/screenshots/card-map-light-5.0.19.jpg) | ![Devices tab in Polish, dark theme](docs/screenshots/card-map-dark-5.0.19.jpg) |
 
-*The Devices tab: reachability summary, MAC/IP filter, manufacturer and device
-rows. The fixture uses TEST-NET addresses and invented device names; it does
-not show a real household network. The Topology tab renders the same devices
-as a hub-and-spoke graph. Dark mode follows your Home Assistant theme.*
+*Captured from 5.0.19 running in Home Assistant with synthetic QA devices.
+The English light view uses actual Chrome zoom at 200%; the Polish dark view
+uses the normal wide layout. These screenshots contain no household data.
+The Topology tab renders the same devices as a hub-and-spoke graph. Dark mode
+follows your Home Assistant theme.*
+
+Table headers support keyboard sorting, and topology nodes expose their full
+names when focused. The card supports English and Polish, including categories,
+pagination and scan status.
 
 ## Installation
 
@@ -132,6 +137,16 @@ Only private addresses (RFC1918 / loopback / link-local) are probed unless
 to return the current status instead of running twice. A single scan probes
 at most 256 devices (`DEFAULT_MAX_DEVICES_PER_SCAN`); on larger networks the
 remaining devices are skipped for that run.
+
+A request accepts at most 12 TCP ports. An unmeasured device shows `—`, including
+devices without an IP and public addresses skipped by the default scope guard.
+Scan results and timestamps are held in memory and reset when the integration
+is reloaded or Home Assistant restarts. A temporary list error preserves the
+existing map and offers **Retry**, which only reads the device list and does
+not start a scan.
+
+Use active scans only for devices and networks you administer. Reachability is
+an informational check, not a security assessment or a guarantee of availability.
 
 ## Automation example
 
