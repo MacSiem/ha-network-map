@@ -922,7 +922,7 @@ class HaNetworkMap extends HTMLElement {
           sources: d.sources || [],
           open_ports: d.open_ports || [],
           lastSeen: null,
-          binding: this._bindings[dedupeKey] || null
+          binding: this._bindings[preferenceId] || this._bindings[dedupeKey] || this._bindings[d.ip] || this._bindings[d.name] || null
         });
       }
     }
@@ -1426,7 +1426,7 @@ class HaNetworkMap extends HTMLElement {
         '</div><div class="tree-group-items">';
 
       currentBindings.forEach(([key, entityId]) => {
-        const device = this.devices.find(d => d.ip === key || d.name === key);
+        const device = this.devices.find(d => d.preferenceId === key || d.mac === key || d.key === key || d.ip === key || d.name === key);
         const devName = device ? device.name : key;
         h += '<div class="tree-item">' +
           '<span class="tree-item-name">' + _esc(devName) + '</span>' +
@@ -1604,7 +1604,7 @@ class HaNetworkMap extends HTMLElement {
         if (trackerEntities.length > 0) {
           const choice = prompt((this._lang === 'pl' ? 'Wybierz ID encji:' : 'Select entity ID:') + '\n\n' + trackerEntities.join('\n'));
           if (choice && trackerEntities.includes(choice)) {
-            this._bindings[ip] = choice;
+            this._bindings[this.selectedDevice?.preferenceId || ip] = choice;
             this._saveBindings();
             this._buildDeviceList();
             this._doRender();
