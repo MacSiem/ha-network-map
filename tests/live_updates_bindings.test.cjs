@@ -158,3 +158,35 @@ test('aliases-only migration persists across IP changes and ambiguous names stay
     assert.equal(f.card._bindings['device:qa'], undefined); assert.equal(f.card._bindings['device:foreign'], undefined);
   } finally { f.close(); }
 });
+
+test('explicit unbind survives an ambiguous legacy name becoming unique after another device disappears', () => {
+  const f = fixture();
+  try {
+    f.card._hass = f.hass;
+    const shared = row('Shared');
+    const foreign = { ...row('Shared', '192.0.2.20'), key: 'foreign', device_id: 'foreign' };
+    f.card._integrationDevices = [shared, foreign];
+    f.card._bindings = { Shared: 'device_tracker.old', 'device:qa': 'device_tracker.current' };
+    f.card._buildDeviceList(); f.card.activeTab = 'bindings'; f.card._doRender();
+    f.card.shadowRoot.querySelector('[data-unbind="device:qa"]').click();
+    assert.equal(f.card._bindings.Shared, 'device_tracker.old');
+    const reloaded = f.dom.window.document.createElement('ha-network-map'); reloaded._loadBindings();
+    reloaded._integrationDevices = [shared]; reloaded._buildDeviceList();
+    assert.equal(reloaded.devices[0].binding, null);
+    reloaded._hass = f.hass; reloaded.activeTab = 'bindings'; reloaded._doRender();
+    assert.equal(reloaded.shadowRoot.querySelectorAll('[data-unbind]').length, 0);
+  } finally { f.close(); }
+});
+
+test('a refreshed and resorted device retains keyboard focus by stable identity', async () => {
+  const f = fixture();
+  try {
+    f.setPayload([row('QA router'), { ...row('Other', '192.0.2.20'), key: 'foreign', device_id: 'foreign' }]);
+    f.card.hass = f.hass; await flush();
+    const button = [...f.card.shadowRoot.querySelectorAll('.device-detail-button')].find(b => b.textContent.includes('QA router'));
+    button.focus();
+    f.setPayload([row('A renamed router'), { ...row('Other', '192.0.2.20'), key: 'foreign', device_id: 'foreign' }]);
+    f.card.hass = { ...f.hass, states: { 'sensor.qa': { state: 2 } } }; await f.advance();
+    assert.match(f.card.shadowRoot.activeElement?.textContent || '', /A renamed router/);
+  } finally { f.close(); }
+});
