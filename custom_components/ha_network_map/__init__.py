@@ -9,6 +9,7 @@ HA's automation engine just as easily as from the card UI.
 from __future__ import annotations
 
 import logging
+import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -26,7 +27,7 @@ from .frontend import (
     async_unregister_card, async_unregister_panel,
 )
 from .scanner import NetworkScanner
-from .websocket_api import async_register_commands
+from .websocket_api import SCAN_FIELDS, async_register_commands
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             include_public_ips=call.data.get("include_public_ips", False),
         )
 
-    async_register_admin_service(hass, DOMAIN, "scan", _handle_scan)
+    async_register_admin_service(hass, DOMAIN, "scan", _handle_scan, schema=vol.Schema(SCAN_FIELDS))
 
     _LOGGER.debug("Network Map set up (entry_id=%s)", entry.entry_id)
     return True

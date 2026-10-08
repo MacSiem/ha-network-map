@@ -1,4 +1,4 @@
-/* HA Tools split — ha-network-map v5.0.17 (2026-09-29) — single-tool standalone repo */
+/* HA Tools split — ha-network-map v5.0.18 (2026-10-08) — single-tool standalone repo */
 (function() {
 'use strict';
 
@@ -729,7 +729,8 @@ class HaNetworkMap extends HTMLElement {
   _loadBindings() {
     try {
       const stored = localStorage.getItem('ha-tools-net-bindings');
-      this._bindings = stored ? JSON.parse(stored) : {};
+      const bindings = stored ? JSON.parse(stored) : {};
+      this._bindings = bindings && typeof bindings === 'object' && !Array.isArray(bindings) ? bindings : {};
     } catch (e) {
       this._bindings = {};
     }
@@ -911,7 +912,7 @@ class HaNetworkMap extends HTMLElement {
           manufacturer: d.manufacturer || null,
           model: d.model || null,
           name,
-          category: preference.category || this._cat(name, { manufacturer: d.manufacturer, model: d.model }),
+          category: ['Phone', 'Tablet', 'Computer', 'Router', 'Camera', 'Smart Home', 'Media', 'Other'].includes(preference.category) ? preference.category : this._cat(name, { manufacturer: d.manufacturer, model: d.model }),
           icon: this._icon(name, { manufacturer: d.manufacturer, model: d.model }),
           reachable: (d.reachable === true) ? true : (d.reachable === false ? false : null),
           entity_id: (d.entity_ids && d.entity_ids[0]) || null,
@@ -995,7 +996,7 @@ class HaNetworkMap extends HTMLElement {
 
     const html = css + '<div class="card">' +
       '<div class="card-header-wrapper">' +
-      '<div class="card-header">📡 ' + this._title + '</div>' +
+      '<div class="card-header">📡 ' + _esc(this._title) + '</div>' +
       '<div class="header-footer">' +
       (this._lastScanTime ? '<span style="font-size:11px;color:var(--bento-text-secondary);">Scanned: ' + new Date(this._lastScanTime).toLocaleTimeString() + '</span>' : '') +
       '<button class="rb" id="rescanBtn"' + (!this._canScan() || this._scanInProgress ? ' disabled' : '') + '>🔄 ' + (this._lang === 'pl' ? 'Skanuj' : 'Rescan') + '</button>' +
@@ -1068,7 +1069,7 @@ class HaNetworkMap extends HTMLElement {
       h += this._renderDeviceDetail(this.selectedDevice);
     }
 
-    const catOpts = cats.map(c => '<option value="' + c + '"' + (this._catFilter === c ? ' selected' : '') + '>' + c + '</option>').join('');
+    const catOpts = cats.map(c => '<option value="' + _esc(c) + '"' + (this._catFilter === c ? ' selected' : '') + '>' + _esc(c) + '</option>').join('');
     h += '<div class="toolbar"><input type="text" class="si" id="sI" placeholder="' + this._t('searchPlaceholder') + '" value="' + _esc(this.searchQuery || '') + '">' +
       '<select class="fs" id="cF"><option value="all">' + this._t('allCategories') + '</option>' + catOpts + '</select>' +
       '<label><input id="showOther" type="checkbox"' + (this._includeNonNetwork ? ' checked' : '') + '> ' + this._t('showOtherDevices') + '</label>' +
@@ -1127,7 +1128,7 @@ class HaNetworkMap extends HTMLElement {
     const rh = rows.map(r => '<div class="dr"><span class="dl">' + r[0] + '</span><span class="dv">' + r[1] + '</span></div>').join('');
     const bindHtml = d.reachable ? '<button class="rb" id="bindBtn" data-ip="' + _esc(d.ip || d.name) + '">🔗 ' + this._t('bind') + '</button>' : '';
     const categories = ['Phone', 'Tablet', 'Computer', 'Router', 'Camera', 'Smart Home', 'Media', 'Other'];
-    const categorySelect = '<label>' + this._t('category') + ' <select id="deviceCategory">' + categories.map(c => '<option value="' + c + '"' + (d.category === c ? ' selected' : '') + '>' + c + '</option>').join('') + '</select></label>';
+    const categorySelect = '<label>' + this._t('category') + ' <select id="deviceCategory">' + categories.map(c => '<option value="' + _esc(c) + '"' + (d.category === c ? ' selected' : '') + '>' + _esc(c) + '</option>').join('') + '</select></label>';
     const links = (d.device_id ? '<a href="/config/devices/device/' + encodeURIComponent(d.device_id) + '">' + this._t('openDevice') + '</a> ' : '') +
       (d.entity_id ? '<button type="button" class="rb" id="openEntity" data-entity="' + _esc(d.entity_id) + '">' + this._t('openEntity') + '</button>' : '');
     const hidden = !!this._devicePrefs[d.preferenceId]?.hidden;
@@ -1407,9 +1408,9 @@ class HaNetworkMap extends HTMLElement {
 
       this._suggestedBindings.forEach(sug => {
         h += '<div class="tree-item" style="gap:4px">' +
-          '<span class="tree-item-name">' + sug.deviceName + ' → ' + sug.entityName + '</span>' +
-          '<button class="rb" style="font-size:11px" data-accept-suggestion="' + sug.key + '">✓</button>' +
-          '<button class="rb" style="font-size:11px" data-reject-suggestion="' + sug.key + '">✕</button>' +
+          '<span class="tree-item-name">' + _esc(sug.deviceName) + ' → ' + _esc(sug.entityName) + '</span>' +
+          '<button class="rb" style="font-size:11px" data-accept-suggestion="' + _esc(sug.key) + '">✓</button>' +
+          '<button class="rb" style="font-size:11px" data-reject-suggestion="' + _esc(sug.key) + '">✕</button>' +
           '</div>';
       });
 
@@ -1447,7 +1448,7 @@ class HaNetworkMap extends HTMLElement {
         '<option value="">— ' + this._t('selectEntity') + '</option>';
 
       Object.keys(this._hass.states).filter(e => e.startsWith('device_tracker.')).forEach(e => {
-        h += '<option value="' + e + '">' + (this._hass.states[e].attributes.friendly_name || e) + '</option>';
+        h += '<option value="' + _esc(e) + '">' + _esc(this._hass.states[e].attributes?.friendly_name || e) + '</option>';
       });
 
       h += '</select><button class="rb" id="manualBindBtn" style="width:100%">' + this._t('bind') + '</button>' +

@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -177,6 +178,29 @@ class NetworkScanner:
         smart-home set (HTTP, HTTPS, HA, ESPHome, MQTT, RTSP, SSH, IPP).
         Concurrent socket connects are capped at ``max_concurrent``.
         """
+        # Validate at the shared backend boundary, including service callers.
+        # Reject invalid requests before recording a scan or acquiring the lock.
+        if isinstance(timeout, bool):
+            raise ValueError("Timeout must be between 0.05 and 5 seconds")
+        try:
+            timeout = float(timeout)
+        except (TypeError, ValueError) as err:
+            raise ValueError("Timeout must be between 0.05 and 5 seconds") from err
+        if not math.isfinite(timeout) or not 0.05 <= timeout <= 5.0:
+            raise ValueError("Timeout must be between 0.05 and 5 seconds")
+        if type(max_concurrent) is not int or not 1 <= max_concurrent <= 64:
+            raise ValueError("Concurrency must be an integer between 1 and 64")
+        if type(include_public_ips) is not bool:
+            raise ValueError("include_public_ips must be a boolean")
+        try:
+            ports_tuple = tuple(DEFAULT_PORTS if ports is None else ports)
+        except TypeError as err:
+            raise ValueError("Ports must be a list of TCP port numbers") from err
+        if len(ports_tuple) > 12 or any(type(p) is not int or not 1 <= p <= 65535 for p in ports_tuple):
+            raise ValueError("At most 12 TCP ports between 1 and 65535 may be probed")
+        if not ports_tuple:
+            ports_tuple = DEFAULT_PORTS
+
         if self._scan_lock.locked():
             return self.get_status() | {"queued": True}
 
@@ -185,12 +209,6 @@ class NetworkScanner:
             # Refresh the device list before probing — registry may have
             # changed since the previous scan.
             await self.list_devices()
-
-            ports_tuple = tuple(int(p) for p in (ports or DEFAULT_PORTS) if 0 < int(p) < 65536)
-            if not ports_tuple:
-                ports_tuple = DEFAULT_PORTS
-            if len(ports_tuple) > 12:
-                raise ValueError("At most 12 ports may be probed in one scan")
 
             targets: list[tuple[str, str]] = []  # (device_key, ip)
             for key, dev in self._devices.items():
@@ -224,8 +242,13 @@ class NetworkScanner:
                 # no-response (timeout/unreachable on every port) counts as
                 # unreachable, so we no longer flag live devices red just for
                 # lacking a scannable open port.
-                self._devices[key].reachable = host_up
-                self._devices[key].open_ports = open_ports
+                # A read-only refresh can remove a device or change its address
+                # while the connect awaits. Never attach the old IP's result to
+                # a replacement row, and do not fail when a row disappeared.
+                device = self._devices.get(key)
+                if device is not None and device.ip == ip:
+                    device.reachable = host_up
+                    device.open_ports = open_ports
 
             await asyncio.gather(*(_probe(k, ip) for k, ip in targets))
 

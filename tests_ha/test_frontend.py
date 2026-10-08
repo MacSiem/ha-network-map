@@ -74,3 +74,22 @@ async def test_unload_removes_owned_resource_and_panel(hass: HomeAssistant) -> N
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert PANEL_URL_PATH not in hass.data[frontend.DATA_PANELS]
     assert list(hass.data["lovelace"].resources.async_items()) == []
+
+
+async def test_service_accepts_documented_options_and_rejects_invalid_requests(hass: HomeAssistant) -> None:
+    import voluptuous as vol
+    from custom_components.ha_network_map.const import DATA_SCANNER
+    await _setup(hass)
+    network = hass.data[DOMAIN][DATA_SCANNER]
+    assert network.get_status()["last_scan_started_at"] is None
+    await hass.services.async_call(DOMAIN, "scan", {"ports": [80], "timeout": 0.05, "max_concurrent": 1, "include_public_ips": False}, blocking=True)
+    assert network.get_status()["last_scan_finished_at"] is not None
+    finished = network.get_status()["last_scan_finished_at"]
+    for options in [{"timeout": 100000}, {"max_concurrent": 65}, {"include_public_ips": "false"}, {"ports": [0]}]:
+        try:
+            await hass.services.async_call(DOMAIN, "scan", options, blocking=True)
+        except vol.Invalid:
+            pass
+        else:
+            raise AssertionError(f"Invalid service options accepted: {options}")
+        assert network.get_status()["last_scan_finished_at"] == finished

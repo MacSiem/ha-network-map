@@ -29,6 +29,17 @@ from .scanner import NetworkScanner
 
 _LOGGER = logging.getLogger(__name__)
 
+SCAN_FIELDS = {
+    vol.Optional("ports"): vol.All([vol.All(int, vol.Range(min=1, max=65535))], vol.Length(max=12)),
+    vol.Optional("timeout", default=DEFAULT_PROBE_TIMEOUT_SECONDS): vol.All(
+        vol.Coerce(float), vol.Range(min=0.05, max=5.0)
+    ),
+    vol.Optional("max_concurrent", default=DEFAULT_MAX_CONCURRENT_PROBES): vol.All(
+        int, vol.Range(min=1, max=64)
+    ),
+    vol.Optional("include_public_ips", default=False): bool,
+}
+
 
 def _scanner(hass: HomeAssistant) -> NetworkScanner:
     """Return the scanner instance registered by ``async_setup_entry``."""
@@ -59,14 +70,7 @@ async def _ws_list(
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "ha_network_map/scan",
-        vol.Optional("ports"): vol.All([vol.All(int, vol.Range(min=1, max=65535))], vol.Length(max=12)),
-        vol.Optional("timeout", default=DEFAULT_PROBE_TIMEOUT_SECONDS): vol.All(
-            vol.Coerce(float), vol.Range(min=0.05, max=5.0)
-        ),
-        vol.Optional("max_concurrent", default=DEFAULT_MAX_CONCURRENT_PROBES): vol.All(
-            int, vol.Range(min=1, max=64)
-        ),
-        vol.Optional("include_public_ips", default=False): bool,
+        **SCAN_FIELDS,
     }
 )
 @websocket_api.require_admin

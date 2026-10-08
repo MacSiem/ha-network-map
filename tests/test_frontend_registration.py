@@ -59,7 +59,7 @@ class FrontendRegistrationTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            'async_register_admin_service(hass, DOMAIN, "scan", _handle_scan)',
+            'async_register_admin_service(hass, DOMAIN, "scan", _handle_scan, schema=vol.Schema(SCAN_FIELDS))',
             source,
         )
         self.assertNotIn(
@@ -73,8 +73,8 @@ class FrontendRegistrationTests(unittest.TestCase):
         card_header = CARD_PATH.read_text(encoding="utf-8").splitlines()[0]
 
         self.assertEqual(hacs["homeassistant"], "2025.2.0")
-        self.assertEqual(manifest["version"], "5.0.17")
-        self.assertIn("v5.0.17", card_header)
+        self.assertEqual(manifest["version"], "5.0.18")
+        self.assertIn("v5.0.18", card_header)
 
     def test_card_does_not_install_cross_card_injectors(self) -> None:
         source = CARD_PATH.read_text(encoding="utf-8")
