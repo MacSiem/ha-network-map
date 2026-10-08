@@ -277,3 +277,37 @@ async def test_manual_edit_during_ownership_read_is_not_overwritten_or_deleted(h
     assert items[0]["id"] == owned["id"]
     assert items[0]["url"] == f"{CARD_URL}?manual=during-load"
     assert await _owned(hass) == []
+
+
+@pytest.mark.parametrize("swallowed", [True, False])
+@pytest.mark.parametrize("change", [{"url": "/user-edited.js"}, {"res_type": "css"}])
+async def test_failed_creation_receipt_preserves_same_id_edited_during_save(hass, swallowed, change):
+    resources = await _resources(hass)
+    unrelated = await resources.async_create_item({"res_type": "module", "url": "/other.js"})
+    edited = None
+
+    async def edit_created():
+        nonlocal edited
+        created = next(item for item in resources.async_items() if item["id"] != unrelated["id"])
+        edited = deepcopy(await resources.async_update_item(created["id"], change))
+
+    original_write = Store._async_write_data
+    async def fail_write(self, *args, **kwargs):
+        if self.key == KEY:
+            await edit_created()
+            raise WriteError("disk unavailable")
+        return await original_write(self, *args, **kwargs)
+
+    original_save = Store.async_save
+    async def fail_save(self, *args, **kwargs):
+        if self.key == KEY:
+            await edit_created()
+            raise OSError("disk unavailable")
+        return await original_save(self, *args, **kwargs)
+
+    failure = patch.object(Store, "_async_write_data", fail_write) if swallowed else patch.object(Store, "async_save", fail_save)
+    with failure, pytest.raises((ValueError, OSError)):
+        await card.async_register_card(hass)
+    assert edited is not None
+    assert list(resources.async_items()) == [unrelated, edited]
+    assert await _owned(hass) == []
