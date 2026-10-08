@@ -75,3 +75,36 @@ test('entity details open HA more-info for state-only entities without a registr
     assert.equal(event.bubbles, true);
   } finally { dom.window.close(); }
 });
+
+
+test('legacy IP binding remains visible for a device also identified by MAC', () => {
+  const dom = new JSDOM('', { runScripts: 'dangerously', url: 'http://localhost/' });
+  try {
+    dom.window.eval(readFileSync(join(__dirname, '..', 'custom_components/ha_network_map/www/ha-network-map.js'), 'utf8'));
+    const card = dom.window.document.createElement('ha-network-map');
+    card._integrationDevices = [{ key: '02:00:00:00:00:01', mac: '02:00:00:00:00:01', device_id: 'qa', name: 'QA device', ip: '192.0.2.1' }];
+    card._bindings = { '192.0.2.1': 'device_tracker.qa' };
+    card._buildDeviceList();
+    assert.equal(card.devices[0].binding, 'device_tracker.qa');
+  } finally { dom.window.close(); }
+});
+
+test('binding from device details survives a changed address and ordinary reload', () => {
+  const dom = new JSDOM('', { runScripts: 'dangerously', url: 'http://localhost/' });
+  try {
+    dom.window.eval(readFileSync(join(__dirname, '..', 'custom_components/ha_network_map/www/ha-network-map.js'), 'utf8'));
+    const card = dom.window.document.createElement('ha-network-map'); dom.window.document.body.append(card);
+    card._hass = { user: { is_admin: false }, states: { 'device_tracker.qa': { attributes: {} } } };
+    const row = { key: '02:00:00:00:00:01', mac: '02:00:00:00:00:01', device_id: 'qa', name: 'QA device', ip: '192.0.2.1', reachable: true };
+    card._integrationDevices = [row]; card._buildDeviceList(); card.selectedDevice = card.devices[0]; card._doRender();
+    dom.window.prompt = () => 'device_tracker.qa';
+    card.shadowRoot.querySelector('#bindBtn').click();
+    const reloaded = dom.window.document.createElement('ha-network-map');
+    reloaded._loadBindings(); reloaded._integrationDevices = [{ ...row, ip: '192.0.2.2' }]; reloaded._buildDeviceList();
+    assert.equal(reloaded.devices[0].binding, 'device_tracker.qa');
+    reloaded._hass = card._hass; reloaded.activeTab = 'bindings'; reloaded._doRender();
+    assert.match(reloaded.shadowRoot.querySelector('.tree-item-name').textContent, /QA device/);
+    reloaded.shadowRoot.querySelector('[data-unbind]').click();
+    assert.equal(reloaded.devices[0].binding, null);
+  } finally { dom.window.close(); }
+});

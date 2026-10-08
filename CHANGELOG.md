@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 5.0.18 (2026-10-08)
+
+- Render tracker names and dashboard titles as literal text; validate stored categories and malformed binding maps.
+- Validate timeout, concurrency, public-IP opt-in and ports at the shared scan boundary. The scan service now accepts its documented options with the same schema as WebSocket requests.
+- Ignore results for removed devices or changed IPs during scans, preserving correct reachability.
+- Verify the runtime against HA 2025.2.0, stable 2026.10.0 and 2026.10.0b4.
 
 - Update existing English/Polish labels and administrator scan controls immediately when Home Assistant changes language or permissions, including while editing and during the render throttle. Preserve search text, focus and the full selection.
 
