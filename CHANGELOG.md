@@ -1,6 +1,11 @@
 # Changelog
 
-## 5.0.18 (2026-10-08)
+## 5.0.19 (2026-10-08)
+
+- Report temporary device-list failures accurately and provide a read-only retry that preserves the existing map.
+- Never invent a scan completion time; completed scans no longer report themselves as queued.
+- Make table sorting available through native keyboard buttons, retain focus and expose the sorting direction.
+- Translate categories, pagination, entity and last-scan labels into Polish; category overrides also update device icons.
 
 - Render tracker names and dashboard titles as literal text; validate stored categories and malformed binding maps.
 - Validate timeout, concurrency, public-IP opt-in and ports at the shared scan boundary. The scan service now accepts its documented options with the same schema as WebSocket requests.

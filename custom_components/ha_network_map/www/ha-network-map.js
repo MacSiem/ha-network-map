@@ -1,4 +1,4 @@
-/* HA Tools split — ha-network-map v5.0.18 (2026-10-08) — single-tool standalone repo */
+/* HA Tools split — ha-network-map v5.0.19 (2026-10-08) — single-tool standalone repo */
 (function() {
 'use strict';
 
@@ -525,6 +525,8 @@ class HaNetworkMap extends HTMLElement {
     this._scanInProgress = false;
     this._scanProgress = { current: 0, total: 0 };
     this._lastScanTime = null;
+    this._listError = false;
+    this._scanError = null;
     this._deviceRegistry = [];
     this._includeNonNetwork = false;
     this._devicePrefs = {};
@@ -577,7 +579,7 @@ class HaNetworkMap extends HTMLElement {
         showOtherDevices: 'Show devices without MAC/IP', hideDevice: 'Hide device', showDevice: 'Show device', showHidden: 'Show hidden',
         openDevice: 'Open HA device', openEntity: 'Open HA entity',
         entity: 'Entity', scanned: 'Last scan:', previous: 'Previous', next: 'Next', unknownStatus: 'Not measured',
-        listFailed: 'Could not load devices. Try again.',
+        listFailed: 'Could not load devices. Try again.', retry: 'Retry',
         categoryPhone: 'Phone', categoryTablet: 'Tablet', categoryComputer: 'Computer', categoryRouter: 'Router', categoryCamera: 'Camera', categorySmartHome: 'Smart Home', categoryMedia: 'Media', categoryOther: 'Other',
       },
       pl: {
@@ -609,7 +611,7 @@ class HaNetworkMap extends HTMLElement {
         showOtherDevices: 'Pokaż urządzenia bez MAC/IP', hideDevice: 'Ukryj urządzenie', showDevice: 'Pokaż urządzenie', showHidden: 'Pokaż ukryte',
         openDevice: 'Otwórz urządzenie HA', openEntity: 'Otwórz encję HA',
         entity: 'Encja', scanned: 'Ostatni skan:', previous: 'Poprzednia', next: 'Następna', unknownStatus: 'Nie zmierzono',
-        listFailed: 'Nie udało się pobrać urządzeń. Spróbuj ponownie.',
+        listFailed: 'Nie udało się pobrać urządzeń. Spróbuj ponownie.', retry: 'Spróbuj ponownie',
         categoryPhone: 'Telefon', categoryTablet: 'Tablet', categoryComputer: 'Komputer', categoryRouter: 'Router', categoryCamera: 'Kamera', categorySmartHome: 'Inteligentny dom', categoryMedia: 'Multimedia', categoryOther: 'Inne',
       }
     };
@@ -815,6 +817,7 @@ class HaNetworkMap extends HTMLElement {
       return;
     }
     this._scanInProgress = true;
+    this._listError = false;
     this._scanError = null;
     this._scanProgress = { current: 0, total: 0 };
     this._doRender();
@@ -853,9 +856,11 @@ class HaNetworkMap extends HTMLElement {
       }
       this._scanResults = reachMap;
       this._buildDeviceList();
+      this._listError = false;
       this._scanError = null;
     } catch (e) {
       console.warn('[ha-network-map] list_devices failed:', e);
+      this._listError = true;
       this._scanError = e?.code === 'unknown_command'
         ? this._integrationMissingHint()
         : this._t('listFailed') + (e?.message ? ' ' + e.message : '');
@@ -895,8 +900,8 @@ class HaNetworkMap extends HTMLElement {
     return 'Other';
   }
 
-  _icon(name, attr) {
-    const c = this._cat(name, attr);
+  _icon(name, attr, category = this._cat(name, attr)) {
+    const c = category;
     return ({
       Phone: '📱', Tablet: '📲', Computer: '💻', Router: '📡',
       Camera: '📷', 'Smart Home': '🏠', Media: '📺', Other: '📡'
@@ -919,6 +924,7 @@ class HaNetworkMap extends HTMLElement {
         const preferenceId = this._preferenceId(d);
         const preference = this._devicePrefs[preferenceId] || {};
         if (preference.hidden && !this._showHidden) continue;
+        const category = ['Phone', 'Tablet', 'Computer', 'Router', 'Camera', 'Smart Home', 'Media', 'Other'].includes(preference.category) ? preference.category : this._cat(name, { manufacturer: d.manufacturer, model: d.model });
         this.devices.push({
           key: d.key, device_id: d.device_id || null, kind: d.kind || 'network', preferenceId,
           ip: d.ip || null,
@@ -926,8 +932,8 @@ class HaNetworkMap extends HTMLElement {
           manufacturer: d.manufacturer || null,
           model: d.model || null,
           name,
-          category: ['Phone', 'Tablet', 'Computer', 'Router', 'Camera', 'Smart Home', 'Media', 'Other'].includes(preference.category) ? preference.category : this._cat(name, { manufacturer: d.manufacturer, model: d.model }),
-          icon: this._icon(name, { manufacturer: d.manufacturer, model: d.model }),
+          category,
+          icon: this._icon(name, { manufacturer: d.manufacturer, model: d.model }, category),
           reachable: (d.reachable === true) ? true : (d.reachable === false ? false : null),
           entity_id: (d.entity_ids && d.entity_ids[0]) || null,
           entity_ids: d.entity_ids || [],
@@ -1022,7 +1028,7 @@ class HaNetworkMap extends HTMLElement {
       '<button class="tab-btn ' + (this.activeTab === 'bindings' ? 'active' : '') + '" data-tab="bindings">' + this._t('bindingsTab') + '</button>' +
       '</div>' +
       (!this._canScan() ? '<div role="status" style="margin:8px 12px;padding:10px 14px;font-size:13px;">' + _esc(this._t('scanAdminRequired')) + '</div>' : '') +
-      (this._scanError ? '<div style="margin:8px 12px;padding:10px 14px;background:var(--bento-error-light);color:var(--bento-error);border:1px solid var(--bento-error-border);border-radius:var(--bento-radius-sm);font-size:13px;">⚠️ ' + _esc(this._scanError) + '</div>' : '') +
+      (this._scanError ? '<div style="margin:8px 12px;padding:10px 14px;background:var(--bento-error-light);color:var(--bento-error);border:1px solid var(--bento-error-border);border-radius:var(--bento-radius-sm);font-size:13px;">⚠️ ' + _esc(this._scanError) + (this._listError ? ' <button type="button" class="rb" id="retryDevices">' + this._t('retry') + '</button>' : '') + '</div>' : '') +
       content +
       '</div>';
 
@@ -1503,6 +1509,12 @@ class HaNetworkMap extends HTMLElement {
         }));
       });
     }
+
+    const retryDevices = this.shadowRoot.querySelector('#retryDevices');
+    if (retryDevices) retryDevices.addEventListener('click', async () => {
+      await this._reloadFromApi();
+      this._doRender();
+    });
 
     // Rescan button
     const rescanBtn = this.shadowRoot.querySelector('#rescanBtn');

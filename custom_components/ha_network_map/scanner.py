@@ -253,7 +253,8 @@ class NetworkScanner:
             await asyncio.gather(*(_probe(k, ip) for k, ip in targets))
 
             self._last_scan_finished_at = time.time()
-            return self.get_status()
+            # The operation has finished; the lock exits before the caller sees this result.
+            return self.get_status() | {"queued": False}
 
     def get_status(self) -> dict[str, Any]:
         reachable = sum(1 for d in self._devices.values() if d.reachable is True)
