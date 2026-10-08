@@ -1,6 +1,9 @@
 # Changelog
 
-## 5.0.19 (2026-10-08)
+## 5.0.20 (2026-10-08)
+
+- Refresh the canonical device map after ordinary Home Assistant state and registry changes without reloading the card; throttle bursts and ignore superseded replies while retaining search, page and focus.
+- Migrate unambiguous legacy binding aliases to stable device IDs, so rebinding and unbinding cannot restore an older tracker. Preserve unrelated bindings and device preferences.
 
 - Report temporary device-list failures accurately and provide a read-only retry that preserves the existing map.
 - Never invent a scan completion time; completed scans no longer report themselves as queued.

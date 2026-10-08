@@ -100,6 +100,27 @@ test('in-flight reads deduplicate and late replies cannot overwrite a new sessio
   } finally { f.close(); }
 });
 
+test('updates arriving during a slow read get one bounded follow-up and removed cards reject late replies', async () => {
+  const f = fixture();
+  try {
+    f.card.hass = f.hass; await flush();
+    const pending = [];
+    const callWS = command => new Promise(resolve => pending.push({ command, resolve }));
+    f.card.hass = { ...f.hass, callWS, states: { 'sensor.qa': { state: 1 } } }; await f.advance();
+    assert.equal(pending.length, 1);
+    for (let i = 2; i < 8; i++) f.card.hass = { ...f.hass, callWS, states: { 'sensor.qa': { state: i } } };
+    await f.advance(); assert.equal(pending.length, 1);
+    pending[0].resolve({ devices: [row('Intermediate')] }); await flush(); await f.advance(0);
+    assert.equal(pending.length, 2);
+    pending[1].resolve({ devices: [row('Latest')] }); await flush();
+    assert.match(f.card.shadowRoot.querySelector('.card').textContent, /Latest/);
+    const late = f.card._reloadFromApi(); assert.equal(pending.length, 3);
+    f.card.remove(); pending[2].resolve({ devices: [row('Detached stale')] }); await late;
+    assert.equal(f.card.devices[0].name, 'Latest');
+    await f.advance(); assert.equal(pending.length, 3);
+  } finally { f.close(); }
+});
+
 test('legacy aliases migrate once; rebind and unbind cannot resurrect the old entity', () => {
   const f = fixture();
   try {
