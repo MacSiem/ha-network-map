@@ -151,7 +151,7 @@ def build_snapshot(rows: list[dict], *, started: float, finished: float, ports, 
     return validate_snapshot(snapshot)
 
 def retain(snapshots: list[dict], now: datetime) -> list[dict]:
-    return sorted((deepcopy(s) for s in snapshots if now-MAX_AGE <= _utc(s["finished_at"]) <= now+timedelta(minutes=5)),key=lambda s:s["finished_at"],reverse=True)[:MAX_SNAPSHOTS]
+    return sorted((deepcopy(s) for s in snapshots if now-MAX_AGE <= _utc(s["finished_at"]) <= now+timedelta(minutes=5)),key=lambda s:_utc(s["finished_at"]),reverse=True)[:MAX_SNAPSHOTS]
 
 def decode_history(payload: Any, now: datetime) -> tuple[list[dict],str]:
     if payload is None:

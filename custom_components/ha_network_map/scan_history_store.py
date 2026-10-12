@@ -12,7 +12,7 @@ from homeassistant.helpers.storage import Store as HAStore
 from homeassistant.core import CoreState
 from homeassistant.exceptions import HomeAssistantError
 
-from .scan_history import SCHEMA, MAX_BYTES, MAX_AGE, decode_history, retain, metadata, compare_snapshots, validate_snapshot
+from .scan_history import SCHEMA, MAX_BYTES, MAX_AGE, decode_history, retain, metadata, compare_snapshots, validate_snapshot, _utc
 
 
 class Store(HAStore):
@@ -166,7 +166,7 @@ class ScanHistory:
     def comparison(self,before_id=None,after_id=None):
         rows = self._retained()
         after = next((s for s in rows if s["id"] == after_id),None) if after_id else (rows[0] if rows else None)
-        before = next((s for s in rows if s["id"] == before_id),None) if before_id else next((s for s in rows if after and s["id"] != after["id"] and s["finished_at"] <= after["finished_at"]),None)
+        before = next((s for s in rows if s["id"] == before_id),None) if before_id else next((s for s in rows if after and s["id"] != after["id"] and _utc(s["finished_at"]) <= _utc(after["finished_at"])),None)
         result = compare_snapshots(before,after)
         result["history_status"] = self._status
         if (before_id and before is None) or (after_id and after is None):
