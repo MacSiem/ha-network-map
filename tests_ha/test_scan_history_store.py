@@ -11,6 +11,23 @@ NOW=datetime.now(timezone.utc).timestamp()
 def snapshot():
     return build_snapshot([],started=NOW-1,finished=NOW,ports=(80,),timeout=.7,max_concurrent=16,include_public_ips=False,discovered=0,eligible=0,skipped={},reasons=[])
 
+@pytest.fixture
+def hass_storage():
+    # The harness mocks all Store writes into a dict. Keep those mocks for HA
+    # registries/auth, but qualify this component's real on-disk write hook.
+    from homeassistant.helpers.storage import Store as HAStore
+    from pytest_homeassistant_custom_component.common import mock_storage
+    actual_write = HAStore._async_write_data
+    with mock_storage() as data:
+        mocked_write = HAStore._async_write_data
+        async def selected_write(store, *arguments):
+            if store.key == 'ha_network_map.scan_history':
+                await actual_write(store, *arguments)
+            else:
+                await mocked_write(store, *arguments)
+        with patch.object(HAStore, '_async_write_data', new=selected_write):
+            yield data
+
 @pytest.fixture(autouse=True)
 def isolated_history_config(hass, tmp_path):
     # Every case owns its synthetic storage. A preserved corrupt fixture must
@@ -85,13 +102,24 @@ async def test_native_store_failed_io_is_not_reported_as_saved(hass):
     assert history.history()["snapshots"]==[]
 
 async def test_native_store_restart_retains_saved_and_cap_is_thirty(hass):
-    history=ScanHistory(hass);await history.async_load()
-    for _ in range(32): assert await history.async_append(snapshot())=="saved"
-    assert len(history.history()["snapshots"])==30
-    restored=ScanHistory(hass);await restored.async_load()
-    assert restored.history()["snapshots"]==history.history()["snapshots"]
-    await restored.async_close()
-    assert restored.history()["snapshots"]==[]
+    from pathlib import Path
+    import json
+    history=ScanHistory(hass);restored=None
+    try:
+        await history.async_load()
+        for _ in range(32): assert await history.async_append(snapshot())=="saved"
+        assert len(history.history()["snapshots"])==30
+        file=Path(history._store.path)
+        assert file.is_file()
+        assert len(json.loads(file.read_text())["data"]["snapshots"])==30
+        restored=ScanHistory(hass);await restored.async_load()
+        assert restored.history()["snapshots"]==history.history()["snapshots"]
+        await restored.async_close()
+        assert restored.history()["snapshots"]==[]
+    finally:
+        await history.async_close()
+        if restored is not None:
+            await restored.async_close()
 
 async def test_retention_cleanup_runs_from_lifecycle_not_comparison_open(hass):
     from datetime import timedelta
