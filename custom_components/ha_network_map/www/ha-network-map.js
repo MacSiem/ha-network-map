@@ -1145,6 +1145,29 @@ class HaNetworkMap extends HTMLElement {
     this._comparison = { history: [], historyLoaded: false, data: null, state: 'not_checked', error: '', before: '', after: '', page: 1, detail: null };
   }
 
+  _validComparisonProof(data) {
+    if (!data || typeof data.comparable !== 'boolean' || !Array.isArray(data.changes)) return false;
+    const keys=['new','not_in_scan','ip_changed','unchanged','unknown'];
+    if (!data.counts || Object.keys(data.counts).length!==keys.length || keys.some(key=>!Object.hasOwn(data.counts,key))) return false;
+    const validMetadata=snapshot=>{
+      if (!snapshot || typeof snapshot.id!=='string' || !snapshot.id || snapshot.source!=='ha_server_tcp' || snapshot.mode!=='tcp') return false;
+      const start=Date.parse(snapshot.started_at),end=Date.parse(snapshot.finished_at);
+      if (typeof snapshot.started_at!=='string' || !snapshot.started_at.endsWith('Z') || typeof snapshot.finished_at!=='string' || !snapshot.finished_at.endsWith('Z') || !Number.isFinite(start) || !Number.isFinite(end) || end<start) return false;
+      const m=snapshot.method,scope=snapshot.scope,caps=snapshot.caps;
+      return m?.protocol==='tcp_connect_v1' && Array.isArray(m.ports) && m.ports.length>0 && m.ports.every(port=>Number.isInteger(port)&&port>0&&port<=65535)
+        && Number.isFinite(m.timeout)&&m.timeout>0&&Number.isInteger(m.max_concurrent)&&m.max_concurrent>0
+        && scope?.discovery==='ha_known_devices_v1'&&typeof scope.include_public_ips==='boolean'
+        && Number.isInteger(caps?.devices)&&caps.devices>0&&Number.isInteger(caps.optional_cache)&&caps.optional_cache>0;
+    };
+    if ([data.before,data.after].some(snapshot=>snapshot!==null && snapshot!==undefined && !validMetadata(snapshot))) return false;
+    if (!data.comparable) return ['unconfirmed','no_data'].includes(data.state) && data.changes.length===0 && keys.every(key=>data.counts[key]===null);
+    if (!['success','partial'].includes(data.state) || !validMetadata(data.before) || !validMetadata(data.after)) return false;
+    const signature=snapshot=>JSON.stringify([snapshot.source,snapshot.method.protocol,snapshot.method.ports,snapshot.method.timeout,snapshot.method.max_concurrent,snapshot.scope.discovery,snapshot.scope.include_public_ips,snapshot.mode,snapshot.caps.devices,snapshot.caps.optional_cache]);
+    if (signature(data.before)!==signature(data.after)) return false;
+    return keys.every(key=>Number.isInteger(data.counts[key])&&data.counts[key]>=0&&data.counts[key]<=1024)
+      && keys.reduce((sum,key)=>sum+data.counts[key],0)===data.changes.length;
+  }
+
   _loadComparison() {
     // Read-only commands only; no automatic retry on failure or context change.
     this._bindComparisonConnection();
@@ -1204,7 +1227,7 @@ class HaNetworkMap extends HTMLElement {
       if (after) command.after_id = after;
       const data = await hass.callWS(command);
       if (!current()) return false;
-      if (!data || !Array.isArray(data.changes) || data.changes.length > 1024 || !Array.isArray(data.reasons) || data.reasons.some(r => typeof r !== 'string') || !data.counts || Object.values(data.counts).some(n => (data.comparable === false && n === null) ? false : !Number.isInteger(n) || n < 0) || data.changes.some(row => !row || !['new','not_in_scan','ip_changed','unchanged','unknown'].includes(row.kind) || [row.before,row.after].some(r => r && (!Array.isArray(r.open_ports) || typeof r.reachable !== 'boolean'))) || !['success','partial','unconfirmed','no_data'].includes(data.state)) throw {code:'invalid_response'};
+      if (!this._validComparisonProof(data) || !Array.isArray(data.changes) || data.changes.length > 1024 || !Array.isArray(data.reasons) || data.reasons.some(r => typeof r !== 'string') || !data.counts || Object.values(data.counts).some(n => (data.comparable === false && n === null) ? false : !Number.isInteger(n) || n < 0) || data.changes.some(row => !row || !['new','not_in_scan','ip_changed','unchanged','unknown'].includes(row.kind) || [row.before,row.after].some(r => r && (!Array.isArray(r.open_ports) || typeof r.reachable !== 'boolean'))) || !['success','partial','unconfirmed','no_data'].includes(data.state)) throw {code:'invalid_response'};
       // Show the actual server-selected pair, including default latest/previous.
       for (const key of ['before','after']) {
         const actualId=data[key]?.id;
