@@ -138,3 +138,18 @@ test('contradictory comparability or unmeasured delta counts cannot become green
   }finally{f.close();}
  }
 });
+
+test('successful comparison requires valid matching source method scope and dates',async()=>{
+ for(const kind of ['missing_metadata','scope_mismatch','method_mismatch','source_mismatch','invalid_date']){
+  const f=fixture();try{
+   if(kind==='missing_metadata')f.result.before=null;
+   if(kind==='scope_mismatch')f.result.after.scope.include_public_ips=true;
+   if(kind==='method_mismatch')f.result.after.method.timeout=2;
+   if(kind==='source_mismatch')f.result.after.source='unknown_source';
+   if(kind==='invalid_date')f.result.after.finished_at='bad';
+   f.card.hass=f.hass;await flush();f.card.setActiveTab('comparison');await f.card._loadComparison();
+   assert.equal(f.card._comparison.state,'error',kind);assert.equal(f.card._comparison.error,'invalid_response',kind);
+   assert.equal(f.card._comparison.data,null,kind);
+  }finally{f.close();}
+ }
+});
