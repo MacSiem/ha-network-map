@@ -72,3 +72,19 @@ class UnknownCounts(unittest.TestCase):
         for result in [history.compare_snapshots(None,scan()),history.compare_snapshots(scan(),scan(public=True))]:
             self.assertFalse(result['comparable'])
             self.assertTrue(all(value is None for value in result['counts'].values()))
+
+class TimestampOrder(unittest.TestCase):
+    def test_retention_orders_actual_utc_instants_not_iso_string_spelling(self):
+        whole=scan(at=NOW);fraction=scan(at=NOW+timedelta(microseconds=500000))
+        retained=history.retain([whole,fraction],NOW+timedelta(seconds=1))
+        self.assertEqual([row['id'] for row in retained],[fraction['id'],whole['id']])
+    def test_default_comparison_selects_previous_instant_across_fraction_boundary(self):
+        import ast
+        path=Path(__file__).parents[1]/'custom_components/ha_network_map/scan_history_store.py'
+        tree=ast.parse(path.read_text());nodes=[node for node in tree.body if isinstance(node,ast.ClassDef) and node.name=='ScanHistory']
+        namespace={'datetime':datetime,'timezone':timezone,'retain':history.retain,'metadata':history.metadata,'compare_snapshots':history.compare_snapshots,'deepcopy':deepcopy,'_utc':history._utc}
+        exec(compile(ast.Module(body=nodes,type_ignores=[]),str(path),'exec'),namespace)
+        cls=namespace['ScanHistory'];instance=cls.__new__(cls);instance._closed=False;instance._status='ready'
+        whole=scan(at=NOW);fraction=scan(at=NOW+timedelta(microseconds=500000));instance._snapshots=[fraction,whole]
+        result=instance.comparison()
+        self.assertTrue(result['comparable']);self.assertEqual(result['before']['id'],whole['id']);self.assertEqual(result['after']['id'],fraction['id'])
