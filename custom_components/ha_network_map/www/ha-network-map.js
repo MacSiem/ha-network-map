@@ -1150,7 +1150,7 @@ class HaNetworkMap extends HTMLElement {
     const keys=['new','not_in_scan','ip_changed','unchanged','unknown'];
     if (!data.counts || Object.keys(data.counts).length!==keys.length || keys.some(key=>!Object.hasOwn(data.counts,key))) return false;
     const validMetadata=snapshot=>{
-      if (!snapshot || typeof snapshot.id!=='string' || !snapshot.id || snapshot.source!=='ha_server_tcp' || snapshot.mode!=='tcp') return false;
+      if (!snapshot || typeof snapshot.id!=='string' || !snapshot.id || snapshot.source!=='ha_server_tcp' || snapshot.mode!=='tcp' || !['full','partial'].includes(snapshot.coverage)) return false;
       const start=Date.parse(snapshot.started_at),end=Date.parse(snapshot.finished_at);
       if (typeof snapshot.started_at!=='string' || !snapshot.started_at.endsWith('Z') || typeof snapshot.finished_at!=='string' || !snapshot.finished_at.endsWith('Z') || !Number.isFinite(start) || !Number.isFinite(end) || end<start) return false;
       const m=snapshot.method,scope=snapshot.scope,caps=snapshot.caps;
@@ -1164,6 +1164,8 @@ class HaNetworkMap extends HTMLElement {
     if (!['success','partial'].includes(data.state) || !validMetadata(data.before) || !validMetadata(data.after)) return false;
     const signature=snapshot=>JSON.stringify([snapshot.source,snapshot.method.protocol,snapshot.method.ports,snapshot.method.timeout,snapshot.method.max_concurrent,snapshot.scope.discovery,snapshot.scope.include_public_ips,snapshot.mode,snapshot.caps.devices,snapshot.caps.optional_cache]);
     if (signature(data.before)!==signature(data.after)) return false;
+    const complete=data.before.coverage==='full' && data.after.coverage==='full';
+    if (data.state!==(complete ? 'success' : 'partial')) return false;
     return keys.every(key=>Number.isInteger(data.counts[key])&&data.counts[key]>=0&&data.counts[key]<=1024)
       && keys.reduce((sum,key)=>sum+data.counts[key],0)===data.changes.length;
   }
