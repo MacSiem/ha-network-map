@@ -11,17 +11,28 @@ NOW=datetime.now(timezone.utc).timestamp()
 def snapshot():
     return build_snapshot([],started=NOW-1,finished=NOW,ports=(80,),timeout=.7,max_concurrent=16,include_public_ips=False,discovered=0,eligible=0,skipped={},reasons=[])
 
+@pytest.fixture(autouse=True)
+def isolated_history_config(hass, tmp_path):
+    # Every case owns its synthetic storage. A preserved corrupt fixture must
+    # not become the input of an unrelated restart/write test.
+    config = tmp_path / 'ha'
+    config.mkdir()
+    hass.config.config_dir = str(config)
+
 async def test_restart_reads_are_no_write_and_corrupt_future_payload_fail_closed(hass):
     for raw,expected in [(None,"empty"),({"schema":2,"snapshots":[snapshot()]},"ready"),({"schema":1,"scans":[snapshot()]},"migrated"),({"schema":999,"snapshots":[]},"unavailable"),({"schema":2,"snapshots":[{}]},"unavailable")]:
         store=AsyncMock();store.async_load.return_value=deepcopy(raw)
         with patch("custom_components.ha_network_map.scan_history_store.Store",return_value=store): history=ScanHistory(hass)
-        await history.async_load();self_result=history.history()
-        assert self_result["status"]==expected
-        history.history();history.comparison(None,None)
-        assert store.async_load.await_count==1;store.async_save.assert_not_awaited()
-        if expected=="unavailable":
-            assert await history.async_append(snapshot())=="unavailable"
-            store.async_save.assert_not_awaited()
+        try:
+            await history.async_load();self_result=history.history()
+            assert self_result["status"]==expected
+            history.history();history.comparison(None,None)
+            assert store.async_load.await_count==1;store.async_save.assert_not_awaited()
+            if expected=="unavailable":
+                assert await history.async_append(snapshot())=="unavailable"
+                store.async_save.assert_not_awaited()
+        finally:
+            await history.async_close()
 
 async def test_save_failure_keeps_old_readback_and_unload_blocks_new_save(hass):
     store=AsyncMock();store.async_load.return_value=None
@@ -44,7 +55,7 @@ async def test_non_admin_cannot_read_private_history(hass,hass_ws_client):
     ws.async_register_commands(hass)
     from homeassistant.auth.const import GROUP_ID_READ_ONLY
     user=await hass.auth.async_create_user("Fixture readonly",group_ids=[GROUP_ID_READ_ONLY])
-    token=await hass.auth.async_create_refresh_token(user)
+    token=await hass.auth.async_create_refresh_token(user,client_id="http://127.0.0.1/synthetic-client")
     client=await hass_ws_client(hass,hass.auth.async_create_access_token(token))
     for request_id,command in enumerate(["ha_network_map/scan_history","ha_network_map/compare_scans"],1):
         await client.send_json({"id":request_id,"type":command})

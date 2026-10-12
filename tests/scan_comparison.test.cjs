@@ -117,3 +117,10 @@ test('deadline keeps one unresolved history wire and forbids another read until 
   late({status:'ready',snapshots:[]});await repeated;await flush();assert.equal(f.card._comparison.data,null);
  }finally{f.close();}
 });
+
+test('default selectors name the actual server-selected saved scans',async()=>{
+ const f=fixture();try{f.card.hass=f.hass;await flush();f.card.setActiveTab('comparison');await f.card._loadComparison();
+  assert.equal(f.card.shadowRoot.querySelector('#comparison-before').value,f.result.before.id);
+  assert.equal(f.card.shadowRoot.querySelector('#comparison-after').value,f.result.after.id);
+ }finally{f.close();}
+});
