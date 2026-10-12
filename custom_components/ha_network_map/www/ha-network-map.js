@@ -2,6 +2,45 @@
 (function() {
 'use strict';
 
+// BEGIN canonical W4 factory: shared/ha-tools-ui.js SHA256 029c06206e55abad9aa09dfcf65bb13027ec24ce6a0bfacc45a938891b27254e
+// HA Tools v3: vendored inside each consumer's own closure, never a window API.
+function createUiV3({ language = 'en' } = {}) {
+  const pl = String(language).startsWith('pl');
+  const states = {
+    success: ['Success', 'Sukces', '✓'],
+    partial: ['Partial', 'Częściowo', '½'],
+    unconfirmed: ['Unconfirmed', 'Niepotwierdzony', '?'],
+    error: ['Error', 'Błąd', '✕'],
+    not_checked: ['Not checked', 'Nie sprawdzono', '–'],
+    no_data: ['No data', 'Brak danych', '∅'],
+  };
+  const status = (value) => {
+    const code = typeof value === 'string' && Object.hasOwn(states, value) ? value : 'not_checked';
+    const row = states[code];
+    return { code, label: row[pl ? 1 : 0], icon: row[2], countsAsSuccess: code === 'success' };
+  };
+  const statusHtml = (value) => {
+    const result = status(value);
+    return `<span class="ht-result-state ht-result-state--${result.code}" data-result-state="${result.code}"><span aria-hidden="true">${result.icon}</span> ${result.label}</span>`;
+  };
+  const css = `
+.ht-result-state { display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid currentColor;border-radius:6px;font-size:12px;line-height:1.4;white-space:normal; }
+.ht-result-state--success { color:#237b3d;background:rgba(35,123,61,.10); }
+.ht-result-state--partial { color:#966400;background:rgba(150,100,0,.10); }
+.ht-result-state--unconfirmed { color:#ad5200;background:rgba(173,82,0,.10); }
+.ht-result-state--error { color:#c32b2b;background:rgba(195,43,43,.10); }
+.ht-result-state--not_checked,.ht-result-state--no_data { color:var(--secondary-text-color,#666);background:transparent; }
+.ht-result-state--no_data { border-style:dashed; }
+:host(.bento-dark) .ht-result-state--success { color:#81cf99; }
+:host(.bento-dark) .ht-result-state--partial { color:#efd080; }
+:host(.bento-dark) .ht-result-state--unconfirmed { color:#ffb97b; }
+:host(.bento-dark) .ht-result-state--error { color:#ff9999; }
+`;
+  return { status, statusHtml, css };
+}
+// END canonical W4 factory
+
+
 // XSS protection helper
 const _asText = (s) => String(s ?? '');
 const _escBase = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -511,6 +550,15 @@ class HaNetworkMap extends HTMLElement {
     this._lang = (navigator.language || '').startsWith('pl') ? 'pl' : 'en';
     this.attachShadow({ mode: 'open' });
     this._hass = null;
+    this._comparisonEpoch = 0;
+    this._comparisonHistoryContext = null;
+    this._comparisonRequest = null;
+    this._comparison = { history: [], historyLoaded: false, data: null, state: 'not_checked', error: '', before: '', after: '', page: 1, detail: null };
+    this._comparisonConnectivity = () => {
+      this._invalidateComparison();
+      this._comparison.error = navigator.onLine === false ? 'offline' : 'context_changed';
+      this._doRender();
+    };
     this.activeTab = 'devices';
     this._title = 'Network Map';
     this._routerIp = '';
@@ -561,7 +609,7 @@ class HaNetworkMap extends HTMLElement {
     return {
       en: {
         // Tabs
-        devicesTab: 'Devices', topologyTab: 'Topology', subnetsTab: 'Subnets', bindingsTab: 'Bindings',
+        comparisonTab: 'Scan comparison', comparisonAdmin: 'An administrator can view private saved scan history.', comparisonRead: 'Read saved scans', comparisonLoading: 'Reading saved scans…', comparisonBefore: 'Earlier scan', comparisonAfter: 'Current saved scan', comparisonSource: 'Source', comparisonMethod: 'Method', comparisonScope: 'Configured scope', comparisonCoverage: 'Coverage', comparisonCounts: 'Targets / completed / discovered / eligible', comparisonSkipped: 'Skipped', comparisonUnknown: 'Identity unknown', comparisonNoData: 'Two completed saved scans are needed. Opening this view does not start a scan.', comparisonAbsence: 'Not in this scan does not mean offline. TCP no-response can mean timeout or filtering.', comparisonReasons: 'Limitations', comparisonNew: 'New in scan', comparisonMissing: 'Not in this scan', comparisonIp: 'IP changed', comparisonSame: 'Same IP', comparisonUnknownRow: 'Unknown', comparisonFull: 'Full', comparisonPartial: 'Partial', comparisonOldIp: 'Earlier IP', comparisonNewIp: 'Current IP', comparisonTCP: 'TCP response / open ports', comparisonIdentity: 'Stable identity', comparisonDetails: 'Scan record details', comparisonStatus: 'History status', devicesTab: 'Devices', topologyTab: 'Topology', subnetsTab: 'Subnets', bindingsTab: 'Bindings',
         // Devices tab
         searchPlaceholder: 'Search devices...', allCategories: 'All', filterCategory: 'Filter:',
         deviceName: 'Device Name', ipAddress: 'IP Address', macAddress: 'MAC', manufacturer: 'Manufacturer',
@@ -593,7 +641,7 @@ class HaNetworkMap extends HTMLElement {
       },
       pl: {
         // Tabs
-        devicesTab: 'Urządzenia', topologyTab: 'Topologia', subnetsTab: 'Sieci', bindingsTab: 'Powiązania',
+        comparisonTab: 'Porównanie skanów', comparisonAdmin: 'Administrator może odczytać prywatną historię zapisanych skanów.', comparisonRead: 'Odczytaj zapisane skany', comparisonLoading: 'Odczytywanie zapisanych skanów…', comparisonBefore: 'Wcześniejszy skan', comparisonAfter: 'Bieżący zapisany skan', comparisonSource: 'Źródło', comparisonMethod: 'Metoda', comparisonScope: 'Skonfigurowany zakres', comparisonCoverage: 'Pokrycie', comparisonCounts: 'Cele / ukończone / odkryte / kwalifikujące się', comparisonSkipped: 'Pominięte', comparisonUnknown: 'Niepewna tożsamość', comparisonNoData: 'Potrzebne są dwa ukończone zapisane skany. Otwarcie widoku nie uruchamia skanowania.', comparisonAbsence: 'Brak w tym skanie nie oznacza offline. Brak odpowiedzi TCP może oznaczać timeout lub filtrowanie.', comparisonReasons: 'Ograniczenia', comparisonNew: 'Nowe w skanie', comparisonMissing: 'Brak w tym skanie', comparisonIp: 'Zmiana IP', comparisonSame: 'Ten sam IP', comparisonUnknownRow: 'Nieznane', comparisonFull: 'Pełne', comparisonPartial: 'Częściowe', comparisonOldIp: 'Wcześniejszy IP', comparisonNewIp: 'Bieżący IP', comparisonTCP: 'Odpowiedź TCP / otwarte porty', comparisonIdentity: 'Stały identyfikator', comparisonDetails: 'Szczegóły pomiaru', comparisonStatus: 'Stan historii', devicesTab: 'Urządzenia', topologyTab: 'Topologia', subnetsTab: 'Sieci', bindingsTab: 'Powiązania',
         // Devices tab
         searchPlaceholder: 'Szukaj urządzeń...', allCategories: 'Wszystkie', filterCategory: 'Filtr:',
         deviceName: 'Nazwa urządzenia', ipAddress: 'Adres IP', macAddress: 'MAC', manufacturer: 'Producent',
@@ -629,7 +677,7 @@ class HaNetworkMap extends HTMLElement {
   _t(key) {
     const lang = this._hass?.language || this._lang || 'en';
     const T = HaNetworkMap._translations;
-    return (T[lang] || T['en'])[key] || T['en'][key] || key;
+    return (T[String(lang).startsWith('pl') ? 'pl' : 'en'] || T['en'])[key] || T['en'][key] || key;
   }
 
   setConfig(config) {
@@ -653,10 +701,18 @@ class HaNetworkMap extends HTMLElement {
     } catch (e) {}
     if (!hass) return;
     if (hass?.language) this._lang = hass.language.startsWith('pl') ? 'pl' : 'en';
+    const previousComparisonContext = this._comparisonLastContext || this._comparisonContext();
     const previousStates = this._hass?.states;
     const session = this._readSession(hass);
     const sessionChanged = this._dataSession && !this._sameReadSession(this._dataSession, session);
     this._hass = hass;
+    this._comparisonLastContext = this._comparisonContext();
+    if (!this._sameComparisonContext(previousComparisonContext, this._comparisonContext())) {
+      this._invalidateComparison();
+      this._scanEpoch = (this._scanEpoch || 0) + 1;
+      this._scanInProgress = false;
+      if (this.activeTab === 'comparison') this._doRender();
+    }
     this._dataSession = session;
     if (sessionChanged) {
       this._readEpoch++;
@@ -874,12 +930,18 @@ class HaNetworkMap extends HTMLElement {
     // The Python integration handles all three: probes run from the HA
     // host (always the home LAN), use a smart-home port set, and skip
     // public IPs by default.
-    if (this._scanInProgress || !this._canScan()) return;
+    if (this._scanInProgress || this._scanTransportPending || !this._canScan()) return;
+    if (navigator.onLine === false || this._hass?.connection?.connected === false || this._disconnected) return;
     if (!this._hass) {
       this._scanError = this._integrationMissingHint();
       this._doRender();
       return;
     }
+    const scanHass = this._hass;
+    const scanContext = this._comparisonContext();
+    const scanEpoch = this._scanEpoch = (this._scanEpoch || 0) + 1;
+    const currentScan = () => !this._disconnected && scanEpoch === this._scanEpoch && this._sameComparisonContext(scanContext, this._comparisonContext());
+    this._scanTransportPending = true;
     this._scanInProgress = true;
     this._listError = false;
     this._scanError = null;
@@ -887,16 +949,22 @@ class HaNetworkMap extends HTMLElement {
     this._doRender();
 
     try {
-      const status = await this._hass.callWS({ type: 'ha_network_map/scan' });
+      const status = await scanHass.callWS({ type: 'ha_network_map/scan' });
+      if (!currentScan()) return;
+      this._invalidateComparison();
+      this._comparison.error = 'context_changed';
       this._lastScanStatus = status || {};
       this._lastScanTime = Number.isFinite(status?.last_scan_finished_at) && status.last_scan_finished_at > 0
         ? Math.floor(status.last_scan_finished_at * 1000)
         : null;
       await this._reloadFromApi();
     } catch (e) {
+      if (!currentScan()) return;
       console.warn('[ha-network-map] scan failed:', e);
       this._scanError = (e && e.message) ? e.message : this._integrationMissingHint();
     } finally {
+      this._scanTransportPending = false;
+      if (!currentScan()) return;
       this._scanInProgress = false;
       this._scanProgress = { current: 0, total: 0 };
       this._doRender();
@@ -905,6 +973,8 @@ class HaNetworkMap extends HTMLElement {
 
   connectedCallback() {
     this._disconnected = false;
+    window.addEventListener('offline', this._comparisonConnectivity);
+    window.addEventListener('online', this._comparisonConnectivity);
     if (this._hass && this._firstHassRender) {
       this._subscribeRegistryUpdates();
       this._queueDeviceRefresh();
@@ -913,6 +983,11 @@ class HaNetworkMap extends HTMLElement {
 
   disconnectedCallback() {
     this._disconnected = true;
+    window.removeEventListener('offline', this._comparisonConnectivity);
+    window.removeEventListener('online', this._comparisonConnectivity);
+    this._invalidateComparison();
+    this._scanEpoch = (this._scanEpoch || 0) + 1;
+    this._scanInProgress = false;
     this._readEpoch++;
     this._readRequest = null;
     this._readDirty = false;
@@ -1011,6 +1086,156 @@ class HaNetworkMap extends HTMLElement {
       }
     })();
     return request.promise;
+  }
+
+  _comparisonContext() {
+    const hass = this._hass;
+    return { connection: hass?.connection, connected: hass?.connection?.connected !== false,
+      callWS: hass?.callWS, user: hass?.user?.id, admin: hass?.user?.is_admin === true,
+      language: hass?.language || this._lang, source: location.origin,
+      online: navigator.onLine !== false };
+  }
+
+  _sameComparisonContext(a, b) {
+    return Object.keys(a).every(key => a[key] === b[key]);
+  }
+
+  _invalidateComparison() {
+    this._comparisonEpoch++;
+    this._comparisonHistoryContext = null;
+    this._comparisonRequest?.cancel();
+    this._comparisonRequest = null;
+    this._comparison = { history: [], historyLoaded: false, data: null, state: 'not_checked', error: '', before: '', after: '', page: 1, detail: null };
+  }
+
+  _loadComparison() {
+    // Read-only commands only; no automatic retry on failure or context change.
+    const context = this._comparisonContext();
+    if (this._disconnected || !context.admin || !context.callWS || !context.online || !context.connected) {
+      this._invalidateComparison();
+      this._comparison.state = 'not_checked';
+      this._comparison.error = !context.admin ? 'role' : !context.online ? 'offline' : 'connection';
+      this._doRender();
+      return Promise.resolve(false);
+    }
+    if (this._comparisonHistoryContext && !this._sameComparisonContext(this._comparisonHistoryContext,context)) this._invalidateComparison();
+    const before = this._comparison.before, after = this._comparison.after;
+    const previous = this._comparisonRequest;
+    if (previous && previous.before === before && previous.after === after && this._sameComparisonContext(context,previous.context)) return previous.promise;
+    previous?.cancel();
+    const request = { epoch: ++this._comparisonEpoch, context, before, after };
+    const current = () => !this._disconnected && this._comparisonRequest === request && request.epoch === this._comparisonEpoch && request.before === this._comparison.before && request.after === this._comparison.after && this._sameComparisonContext(context,this._comparisonContext());
+    const hass = this._hass;
+    let timeoutId;
+    const expired = new Promise((_, reject) => {
+      request.cancel = () => { clearTimeout(timeoutId); reject({ code: 'cancelled' }); };
+      timeoutId = setTimeout(() => reject({code:'deadline'}),10000);
+    });
+    this._comparisonRequest = request;
+    this._comparison.state = 'loading';
+    this._comparison.data = null;
+    this._comparison.detail = null;
+    this._comparison.error = '';
+    const work = async () => {
+      if (!this._comparison.historyLoaded) {
+        const history = await hass.callWS({ type: 'ha_network_map/scan_history' });
+        if (!current()) return false;
+        if (!history || !Array.isArray(history.snapshots) || history.snapshots.length > 30 || history.snapshots.some(s => !s || typeof s.id !== 'string' || typeof s.finished_at !== 'string')) throw {code:'invalid_response'};
+        this._comparison.history = history.snapshots;
+        this._comparison.historyStatus = history.status;
+        this._comparison.historyLoaded = true;
+        this._comparisonHistoryContext = {...context};
+      }
+      if (!current()) return false;
+      if (this._comparison.history.length < 2) {
+        this._comparison.state = ['unavailable','save_failed','unloaded'].includes(this._comparison.historyStatus) ? 'error' : 'no_data';
+        this._comparison.error = this._comparison.state === 'error' ? 'history_unavailable' : '';
+        return true;
+      }
+      const command = {type:'ha_network_map/compare_scans'};
+      if (before) command.before_id = before;
+      if (after) command.after_id = after;
+      const data = await hass.callWS(command);
+      if (!current()) return false;
+      if (!data || !Array.isArray(data.changes) || data.changes.length > 1024 || !Array.isArray(data.reasons) || data.reasons.some(r => typeof r !== 'string') || !data.counts || Object.values(data.counts).some(n => !Number.isInteger(n) || n < 0) || data.changes.some(row => !row || !['new','not_in_scan','ip_changed','unchanged','unknown'].includes(row.kind) || [row.before,row.after].some(r => r && (!Array.isArray(r.open_ports) || typeof r.reachable !== 'boolean'))) || !['success','partial','unconfirmed','no_data'].includes(data.state)) throw {code:'invalid_response'};
+      this._comparison.data = data;
+      this._comparison.state = data.state;
+      this._comparison.page = 1;
+      return true;
+    };
+    request.promise = Promise.race([work(),expired]).catch(error => {
+      if (!current()) return false;
+      this._comparison.state = error.code === 'cancelled' ? 'not_checked' : 'error';
+      this._comparison.error = ['deadline','unauthorized','unknown_command','history_unavailable','invalid_response'].includes(error?.code) ? error.code : 'read_failed';
+      return true;
+    }).finally(() => {
+      clearTimeout(timeoutId);
+      // Closing the local request rejects any late transport reply; HA WS
+      // promises have no cancellation API, and are never retried here.
+      if (this._comparisonRequest === request) {
+        this._comparisonRequest = null;
+        this._doRender();
+      }
+    });
+    this._doRender();
+    return request.promise;
+  }
+
+  _comparisonReason(reason) {
+    const text = {
+      no_ip:['No IP; target skipped','Brak IP; cel pominięty'], public_ip:['Public IP skipped by policy','Publiczny IP pominięty zgodnie z ustawieniem'], device_cap:['Device limit reached','Osiągnięto limit urządzeń'], zeroconf_cap:['Zeroconf cache limit','Limit cache Zeroconf'], dhcp_cap:['DHCP cache limit','Limit cache DHCP'], zeroconf_unreadable:['Zeroconf cache unreadable','Nie udało się odczytać cache Zeroconf'], dhcp_unreadable:['DHCP cache unreadable','Nie udało się odczytać cache DHCP'], unknown_identity:['Missing or ambiguous identity','Brakująca lub niejednoznaczna tożsamość'], missing_pair:['Two saved scans needed','Potrzebne dwa zapisane skany'], method_mismatch:['Different scan methods','Różne metody skanowania'], scope_mismatch:['Different configured scopes','Różne skonfigurowane zakresy'], mode_mismatch:['Different modes','Różne tryby'], caps_mismatch:['Different limits','Różne limity'], invalid_order:['Select an earlier baseline','Wybierz wcześniejszy skan'], selection_expired:['Selected scan expired','Wybrany skan wygasł'], offline:['Browser offline. Read again when connected.','Przeglądarka offline. Odczytaj ponownie po połączeniu.'], connection:['HA connection unavailable','Brak połączenia z HA'], deadline:['Read deadline reached; no retry was sent','Przekroczono czas odczytu; nie wysłano kolejnej próby'], unauthorized:['History requires administrator permission','Historia wymaga uprawnień administratora'], role:['History requires administrator permission','Historia wymaga uprawnień administratora'], unknown_command:['Update the Network Map integration to read history','Zaktualizuj integrację Network Map, aby odczytać historię'], history_unavailable:['Saved history unavailable','Zapisana historia niedostępna'], invalid_response:['Invalid history response','Nieprawidłowa odpowiedź historii'], context_changed:['Context changed. Read again.','Kontekst się zmienił. Odczytaj ponownie.'], read_failed:['Could not read saved scans','Nie udało się odczytać zapisanych skanów']
+    };
+    return text[reason]?.[this._lang === 'pl' ? 1 : 0] || reason;
+  }
+
+  _comparisonMeta(snapshot, title) {
+    if (!snapshot) return '';
+    const pl = this._lang === 'pl';
+    const source = snapshot.source === 'ha_server_tcp' ? (pl ? 'Pomiar TCP z hosta HA' : 'TCP measurement from HA host') : snapshot.source;
+    const scope = (pl ? 'Urządzenia znane HA; publiczne IP: ' : 'HA-known devices; public IPs: ') + (snapshot.scope?.include_public_ips ? (pl ? 'włączone' : 'included') : (pl ? 'pomijane' : 'excluded'));
+    const pairs = [[this._t('comparisonSource'),source], [this._t('comparisonMethod'), 'TCP connect v1; ' + (snapshot.method?.ports || []).join(', ') + '; ' + snapshot.method?.timeout + ' s; ' + snapshot.method?.max_concurrent], [this._t('comparisonScope'),scope], [pl ? 'Tryb / limity' : 'Mode / limits', (snapshot.mode || '') + ' / ' + snapshot.caps?.devices + ' / ' + snapshot.caps?.optional_cache], [this._t('comparisonCoverage'),this._t(snapshot.coverage === 'full' ? 'comparisonFull' : 'comparisonPartial')], [this._t('comparisonCounts'),[snapshot.target_count,snapshot.completed_count,snapshot.discovered_count,snapshot.eligible_count].join(' / ')], [this._t('comparisonSkipped'),Object.entries(snapshot.skipped || {}).map(([key,value]) => this._comparisonReason(key) + ': ' + value).join('; ') || '0'], [this._t('comparisonUnknown'),snapshot.unknown_identity_count], [this._t('comparisonReasons'),(snapshot.reasons || []).map(r => this._comparisonReason(r)).join('; ') || '—']];
+    return `<section class="comparison-meta"><h3>${_esc(title)}</h3><p><time>${_esc(snapshot.started_at)}</time> → <time>${_esc(snapshot.finished_at)}</time> UTC</p><dl>${pairs.map(([key,value]) => `<div><dt>${_esc(key)}</dt><dd>${_esc(value)}</dd></div>`).join('')}</dl></section>`;
+  }
+
+  _renderComparisonTab() {
+    if (!this._canScan()) return `<section id="comparison"><p>${_esc(this._t('comparisonAdmin'))}</p></section>`;
+    const c = this._comparison, data = c.data;
+    const ui = createUiV3({language:this._lang});
+    const labels = {new:'comparisonNew',not_in_scan:'comparisonMissing',ip_changed:'comparisonIp',unchanged:'comparisonSame',unknown:'comparisonUnknownRow'};
+    const option = s => `<option value="${_esc(s.id)}">${_esc(s.finished_at)} UTC · ${_esc(this._t(s.coverage === 'full' ? 'comparisonFull' : 'comparisonPartial'))}</option>`;
+    const select = (id,title,value) => `<label for="${id}">${_esc(title)}<select id="${id}"><option value="">${_esc(title)}</option>${c.history.map(option).join('')}</select></label>`;
+    let h = `<section id="comparison" aria-labelledby="comparison-title"><h2 id="comparison-title">${_esc(this._t('comparisonTab'))}</h2><div class="comparison-controls"><button id="comparison-read" ${c.state === 'loading' ? 'disabled' : ''}>${_esc(this._t(c.state === 'loading' ? 'comparisonLoading' : 'comparisonRead'))}</button>${c.history.length ? select('comparison-before',this._t('comparisonBefore'),c.before) + select('comparison-after',this._t('comparisonAfter'),c.after) : ''}</div><div aria-live="polite">${ui.statusHtml(c.state === 'loading' ? 'not_checked' : c.state)}${c.error ? '<p>' + _esc(this._comparisonReason(c.error)) + '</p>' : ''}</div><p>${_esc(this._t('comparisonAbsence'))}</p>`;
+    if (c.historyStatus) h += `<p>${_esc(this._t('comparisonStatus'))}: ${_esc({ready:this._lang === 'pl' ? 'Gotowa' : 'Ready',empty:this._lang === 'pl' ? 'Pusta' : 'Empty',migrated:this._lang === 'pl' ? 'Odczyt po migracji w pamięci' : 'Read after in-memory migration',unavailable:this._comparisonReason('history_unavailable'),save_failed:this._lang === 'pl' ? 'Ostatni zapis nieudany' : 'Last save failed'}[c.historyStatus] || c.historyStatus)}</p>`;
+    if (!data) return h + `<p>${_esc(this._t('comparisonNoData'))}</p></section>`;
+    h += `<div class="comparison-metadata">${this._comparisonMeta(data.before,this._t('comparisonBefore'))}${this._comparisonMeta(data.after,this._t('comparisonAfter'))}</div><p>${_esc(this._t('comparisonReasons'))}: ${_esc(data.reasons.map(r => this._comparisonReason(r)).join('; ') || '—')}</p>`;
+    h += `<div class="comparison-counts">${Object.entries(data.counts).map(([key,count]) => `<span>${_esc(this._t(labels[key] || key))}: ${_esc(count)}</span>`).join('')}</div>`;
+    const pageCount = Math.max(1,Math.ceil(data.changes.length/20));
+    c.page = Math.max(1,Math.min(c.page,pageCount));
+    const rows = data.changes.slice((c.page-1)*20,c.page*20);
+    h += `<ul class="comparison-records">${rows.map((row,index) => `<li><button id="comparison-row-${(c.page-1)*20+index}" data-comparison-detail="${(c.page-1)*20+index}"><strong>${_esc(row.after?.name || row.before?.name || '—')}</strong><span>${_esc(this._t(labels[row.kind] || 'comparisonUnknownRow'))}</span><span class="mn">${_esc(row.before?.ip || '—')} → ${_esc(row.after?.ip || '—')}</span></button></li>`).join('')}</ul><nav class="comparison-controls" aria-label="${_esc(this._t('comparisonTab'))}"><button id="comparison-prev" ${c.page <= 1 ? 'disabled' : ''}>${_esc(this._t('previous'))}</button><span>${c.page} / ${pageCount} · ${data.changes.length}</span><button id="comparison-next" ${c.page >= pageCount ? 'disabled' : ''}>${_esc(this._t('next'))}</button></nav>`;
+    if (c.detail !== null && data.changes[c.detail]) {
+      const row = data.changes[c.detail];
+      h += `<section id="comparison-detail" aria-labelledby="comparison-detail-title"><h3 id="comparison-detail-title">${_esc(this._t('comparisonDetails'))}</h3><p>${_esc(this._t('comparisonIdentity'))}: ${_esc(row.stable_id || this._t('comparisonUnknownRow'))}</p><p>${_esc(this._t('comparisonOldIp'))}: ${_esc(row.before?.ip || '—')} → ${_esc(this._t('comparisonNewIp'))}: ${_esc(row.after?.ip || '—')}</p><p>${_esc(this._t('comparisonTCP'))}: ${_esc(row.before ? String(row.before.reachable) + ' / ' + row.before.open_ports.join(', ') : '—')} → ${_esc(row.after ? String(row.after.reachable) + ' / ' + row.after.open_ports.join(', ') : '—')}</p><button id="comparison-close">${_esc(this._t('close'))}</button></section>`;
+    }
+    return h + '</section>';
+  }
+
+  _bindComparisonEvents() {
+    const c = this._comparison;
+    this.shadowRoot.querySelector('#comparison-read')?.addEventListener('click', () => {
+      this._invalidateComparison(); this._loadComparison();
+    });
+    for (const key of ['before','after']) {
+      const select = this.shadowRoot.querySelector('#comparison-' + key);
+      if (!select) continue;
+      select.value = c[key];
+      select.addEventListener('change', () => { c[key] = select.value; c.detail = null; this._loadComparison(); });
+    }
+    for (const [id,delta] of [['comparison-prev',-1],['comparison-next',1]]) {
+      this.shadowRoot.querySelector('#'+id)?.addEventListener('click', () => {c.page += delta;c.detail = null;this._doRender();});
+    }
+    this.shadowRoot.querySelectorAll('[data-comparison-detail]').forEach(button => button.addEventListener('click', () => {c.detail=Number(button.dataset.comparisonDetail);this._doRender();}));
+    this.shadowRoot.querySelector('#comparison-close')?.addEventListener('click', () => {const index=c.detail;c.detail=null;this._doRender();this.shadowRoot.querySelector('#comparison-row-'+index)?.focus();});
   }
 
   _categoryLabel(category) {
@@ -1160,6 +1385,7 @@ class HaNetworkMap extends HTMLElement {
         case 'devices': content = this._renderDevicesTab(); break;
         case 'topology': content = this._renderTopologyTab(); break;
         case 'bindings': content = this._renderBindingsTab(); break;
+        case 'comparison': content = this._renderComparisonTab(); break;
       }
     }
 
@@ -1174,6 +1400,7 @@ class HaNetworkMap extends HTMLElement {
       '<div class="tabs">' +
       '<button class="tab-btn ' + (this.activeTab === 'devices' ? 'active' : '') + '" id="tab-devices" data-tab="devices">' + this._t('devicesTab') + '</button>' +
       '<button class="tab-btn ' + (this.activeTab === 'topology' ? 'active' : '') + '" id="tab-topology" data-tab="topology">' + this._t('topologyTab') + '</button>' +
+      '<button class="tab-btn ' + (this.activeTab === 'comparison' ? 'active' : '') + '" id="tab-comparison" data-tab="comparison">' + this._t('comparisonTab') + '</button>' +
       '<button class="tab-btn ' + (this.activeTab === 'bindings' ? 'active' : '') + '" id="tab-bindings" data-tab="bindings">' + this._t('bindingsTab') + '</button>' +
       '</div>' +
       (!this._canScan() ? '<div role="status" style="margin:8px 12px;padding:10px 14px;font-size:13px;">' + _esc(this._t('scanAdminRequired')) + '</div>' : '') +
@@ -1628,6 +1855,7 @@ class HaNetworkMap extends HTMLElement {
   }
 
   _bindEvents() {
+    this._bindComparisonEvents();
     this.shadowRoot.querySelectorAll('svg g[tabindex="0"]').forEach(node => {
       const showName = () => {
         const label = this.shadowRoot.querySelector('.topology-node-name');
@@ -1644,7 +1872,9 @@ class HaNetworkMap extends HTMLElement {
     this.shadowRoot.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const tabId = btn.dataset.tab;
+        if (this.activeTab === 'comparison' && tabId !== 'comparison') { this._comparisonEpoch++; this._comparisonRequest?.cancel(); this._comparisonRequest = null; if (this._comparison.state === 'loading') this._comparison.state = 'not_checked'; }
         this.activeTab = tabId;
+        if (tabId === 'comparison' && !this._comparison.data && this._comparison.state === 'not_checked') this._loadComparison();
         history.replaceState(null, '', location.pathname + '#' + this._toolId + '/' + tabId);
         this._doRender();
       });
@@ -1867,12 +2097,38 @@ class HaNetworkMap extends HTMLElement {
   }
 
   setActiveTab(tabId) {
+    if (this.activeTab === 'comparison' && tabId !== 'comparison') { this._comparisonEpoch++; this._comparisonRequest?.cancel(); this._comparisonRequest = null; if (this._comparison.state === 'loading') this._comparison.state = 'not_checked'; }
     this.activeTab = tabId;
+    if (tabId === 'comparison' && !this._comparison.data && this._comparison.state === 'not_checked') this._loadComparison();
     this._doRender();
   }
 
   _css() {
-    return '<style>' + HA_NETWORK_MAP_BENTO_CSS + '\n' +
+    return '<style>' + HA_NETWORK_MAP_BENTO_CSS + '\n' + createUiV3({language:this._lang}).css + `
+#comparison { min-width:0;overflow-wrap:anywhere; }
+#comparison h2 {font-size:18px;}
+.comparison-controls {display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0;}
+#comparison button,#comparison select {min-height:44px;min-width:44px;padding:8px 12px;border:1px solid var(--bento-border);border-radius:8px;background:var(--bento-card);color:var(--bento-text);font:inherit;max-width:100%;}
+#comparison button {cursor:pointer;}
+#comparison button:disabled {opacity:.6;cursor:default;}
+#comparison :focus-visible {outline:2px solid var(--bento-primary);outline-offset:2px;}
+#comparison label {flex:1 1 220px;min-width:0;display:flex;flex-direction:column;gap:4px;}
+#comparison select {width:100%;}
+.comparison-metadata {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px;}
+.comparison-meta,#comparison-detail {border:1px solid var(--bento-border);border-radius:10px;padding:12px;background:var(--bento-bg);min-width:0;}
+.comparison-meta h3 {font-size:14px;}
+.comparison-meta dl {margin:0;}
+.comparison-meta dl>div {display:flex;flex-wrap:wrap;gap:8px;border-top:1px solid var(--bento-border);padding:6px 0;}
+.comparison-meta dt {flex:1 1 120px;color:var(--bento-text-secondary);}
+.comparison-meta dd {flex:2 1 160px;margin:0;}
+.comparison-counts {display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;}
+.comparison-records {list-style:none;margin:0;padding:0;}
+.comparison-records li {margin:4px 0;}
+.comparison-records button {width:100%;display:flex;flex-wrap:wrap;gap:8px;text-align:left;align-items:center;}
+.comparison-records strong {flex:1 1 180px;min-width:0;}
+.comparison-records .mn {flex:1 1 220px;min-width:0;overflow-wrap:anywhere;}
+@media(max-width:500px) {#comparison .comparison-controls>* {flex:1 1 100%;}#comparison .comparison-records button>* {flex-basis:100%;}}
+` +
     '* { box-sizing: border-box; }' +
     ':host { --bp: var(--bento-primary); --bs: var(--bento-success); --be: var(--bento-error); ' +
     '--bbg: var(--bento-bg); --bcard: var(--bento-card); --btxt: var(--bento-text); ' +

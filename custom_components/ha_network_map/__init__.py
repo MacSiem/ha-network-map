@@ -28,6 +28,7 @@ from .frontend import (
     async_unregister_card, async_unregister_panel,
 )
 from .scanner import NetworkScanner
+from .scan_history_store import ScanHistory
 from .websocket_api import SCAN_FIELDS, async_register_commands
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,7 +51,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _async_setup_entry_locked(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Serialize setup with frontend cleanup."""
     bucket = hass.data.setdefault(DOMAIN, {})
-    bucket[DATA_SCANNER] = NetworkScanner(hass)
+    history = ScanHistory(hass)
+    await history.async_load()
+    bucket["scan_history"] = history
+    bucket[DATA_SCANNER] = NetworkScanner(hass, history=history)
 
     if not bucket.get(DATA_WS_REGISTERED):
         async_register_commands(hass)
@@ -85,7 +89,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async with _lifecycle_lock(hass):
         hass.services.async_remove(DOMAIN, "scan")
         bucket = hass.data.get(DOMAIN, {})
-        bucket.pop(DATA_SCANNER, None)
+        scanner = bucket.pop(DATA_SCANNER, None)
+        if scanner is not None:
+            scanner.close()
+        history = bucket.pop("scan_history", None)
+        if history is not None:
+            await history.async_close()
         if bucket.pop(DATA_PANEL_REGISTERED, False):
             async_unregister_panel(hass)
         if bucket.get(DATA_FRONTEND_REGISTERED):

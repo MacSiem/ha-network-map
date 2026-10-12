@@ -24,6 +24,7 @@ import math
 import re
 import time
 from dataclasses import dataclass, field
+from copy import deepcopy
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 
@@ -36,6 +37,8 @@ from .const import (
     DEFAULT_PORTS,
     DEFAULT_PROBE_TIMEOUT_SECONDS,
 )
+
+from .scan_history import build_snapshot
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -133,8 +136,13 @@ def _ip_from_url(value: str | None) -> str | None:
 class NetworkScanner:
     """Read HA's view of the network; optionally probe TCP reachability."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, *, history=None) -> None:
         self.hass = hass
+        self._history = history
+        self._closed = False
+        self._history_status = "not_configured"
+        self._discovery_reasons: list[str] = []
+        self._ambiguous_keys: set[str] = set()
         self._devices: dict[str, Device] = {}
         self._last_scan_started_at: float | None = None
         self._last_scan_finished_at: float | None = None
@@ -151,6 +159,8 @@ class NetworkScanner:
         """
         previous = self._devices
         self._devices = {}
+        self._discovery_reasons = []
+        self._ambiguous_keys = set()
         self._merge_registry_sources()
         self._merge_entity_sources()
         self._merge_optional_discovery_sources()
@@ -201,6 +211,8 @@ class NetworkScanner:
         if not ports_tuple:
             ports_tuple = DEFAULT_PORTS
 
+        if self._closed:
+            raise RuntimeError("Scanner unloaded")
         if self._scan_lock.locked():
             return self.get_status() | {"queued": True}
 
@@ -210,17 +222,35 @@ class NetworkScanner:
             # changed since the previous scan.
             await self.list_devices()
 
-            targets: list[tuple[str, str]] = []  # (device_key, ip)
-            for key, dev in self._devices.items():
-                if not dev.ip:
+            # Freeze actual run inputs: read-only refresh may replace _devices
+            # while probes await. Capture never serializes that later live map.
+            frozen = {key: deepcopy(dev.to_dict()) for key,dev in self._devices.items()}
+            for key in self._ambiguous_keys:
+                if key in frozen:
+                    # Existing discovery merges shared keys. Its overwritten
+                    # identity cannot safely name a measured device.
+                    frozen[key]["device_id"] = None
+                    frozen[key]["mac"] = None
+            discovery_reasons = self._discovery_reasons.copy()
+            targets: list[tuple[str,str]] = []
+            skipped = {"no_ip":0,"public_ip":0,"device_cap":0}
+            eligible = 0
+            for key,row in frozen.items():
+                if not row["ip"]:
+                    skipped["no_ip"] += 1
                     continue
-                if not include_public_ips and not _is_private_ip(dev.ip):
-                    dev.reachable = None
-                    dev.open_ports = []
+                if not include_public_ips and not _is_private_ip(row["ip"]):
+                    skipped["public_ip"] += 1
+                    dev = self._devices.get(key)
+                    if dev is not None:
+                        dev.reachable = None
+                        dev.open_ports = []
                     continue
-                targets.append((key, dev.ip))
+                eligible += 1
                 if len(targets) >= DEFAULT_MAX_DEVICES_PER_SCAN:
-                    break
+                    skipped["device_cap"] += 1
+                    continue
+                targets.append((key,row["ip"]))
 
             sem = asyncio.Semaphore(max(1, int(max_concurrent)))
 
@@ -245,21 +275,51 @@ class NetworkScanner:
                 # A read-only refresh can remove a device or change its address
                 # while the connect awaits. Never attach the old IP's result to
                 # a replacement row, and do not fail when a row disappeared.
+                frozen[key]["reachable"] = host_up
+                frozen[key]["open_ports"] = open_ports
                 device = self._devices.get(key)
                 if device is not None and device.ip == ip:
                     device.reachable = host_up
                     device.open_ports = open_ports
 
-            await asyncio.gather(*(_probe(k, ip) for k, ip in targets))
+            tasks = [asyncio.create_task(_probe(k,ip)) for k,ip in targets]
+            try:
+                await asyncio.gather(*tasks)
+            except BaseException:
+                # Do not leave failed/cancelled work probing after the scan lock
+                # is released. No completed snapshot is produced on this path.
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks,return_exceptions=True)
+                raise
 
             self._last_scan_finished_at = time.time()
+            if self._history is not None and not self._closed:
+                try:
+                    snapshot = build_snapshot(
+                        [frozen[key] for key,_ in targets],
+                        started=self._last_scan_started_at, finished=self._last_scan_finished_at,
+                        ports=ports_tuple, timeout=timeout, max_concurrent=max_concurrent,
+                        include_public_ips=include_public_ips, discovered=len(frozen),
+                        eligible=eligible, skipped=skipped, reasons=discovery_reasons,
+                    )
+                    self._history_status = await self._history.async_append(snapshot)
+                except (ValueError,TypeError,OSError):
+                    # Scan remains successful; never claim the history was saved.
+                    self._history_status = "save_failed"
+                    _LOGGER.warning("Completed scan history unavailable")
             # The operation has finished; the lock exits before the caller sees this result.
             return self.get_status() | {"queued": False}
+
+    def close(self) -> None:
+        """Reject late capture after integration unload without new probes."""
+        self._closed = True
 
     def get_status(self) -> dict[str, Any]:
         reachable = sum(1 for d in self._devices.values() if d.reachable is True)
         with_ip = sum(1 for d in self._devices.values() if d.ip)
         return {
+            "history_status": self._history_status,
             "device_count": len(self._devices),
             "with_ip": with_ip,
             "reachable": reachable,
@@ -302,6 +362,8 @@ class NetworkScanner:
             key = mac or ip or f"device:{d.id}"
             name = d.name_by_user or d.name or "Unknown"
             dev = self._ensure(key, name=name, source="device_registry")
+            if dev.device_id is not None and dev.device_id != d.id:
+                self._ambiguous_keys.add(key)
             dev.device_id = d.id
             connection_types = {c[0] for c in d.connections if isinstance(c, (list, tuple)) and len(c) == 2}
             dev.kind = "bluetooth" if "bluetooth" in connection_types else "zigbee" if "zigbee" in connection_types else "other" if connection_types else "service"
@@ -352,7 +414,10 @@ class NetworkScanner:
         zc = self.hass.data.get("zeroconf")
         if zc and hasattr(zc, "_cache"):
             try:
-                for info in list(getattr(zc, "_cache", {}).values())[:200]:
+                cache = list(getattr(zc, "_cache", {}).values())
+                if len(cache) > 200:
+                    self._discovery_reasons.append("zeroconf_cap")
+                for info in cache[:200]:
                     addresses = getattr(info, "addresses_by_version", None) or {}
                     flat: list[str] = []
                     for vlist in addresses.values():
@@ -364,12 +429,16 @@ class NetworkScanner:
                         if not dev.ip:
                             dev.ip = ip
             except Exception:  # pragma: no cover - defensive
+                self._discovery_reasons.append("zeroconf_unreadable")
                 _LOGGER.debug("Zeroconf merge skipped", exc_info=True)
 
         dhcp_state = self.hass.data.get("dhcp")
         if dhcp_state and hasattr(dhcp_state, "address_data"):
             try:
-                for address, info in list(getattr(dhcp_state, "address_data", {}).items())[:200]:
+                cache = list(getattr(dhcp_state, "address_data", {}).items())
+                if len(cache) > 200:
+                    self._discovery_reasons.append("dhcp_cap")
+                for address, info in cache[:200]:
                     ip = _normalize_ip(address)
                     mac = _normalize_mac(info.get("macaddress") if isinstance(info, dict) else None)
                     hostname = info.get("hostname") if isinstance(info, dict) else None
@@ -382,6 +451,7 @@ class NetworkScanner:
                     if mac and not dev.mac:
                         dev.mac = mac
             except Exception:  # pragma: no cover - defensive
+                self._discovery_reasons.append("dhcp_unreadable")
                 _LOGGER.debug("DHCP merge skipped", exc_info=True)
 
     # ---------------------------------------------------------- probe

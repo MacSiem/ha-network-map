@@ -108,7 +108,35 @@ async def _ws_status(
     connection.send_result(msg["id"], _scanner(hass).get_status())
 
 
+
+@websocket_api.websocket_command({vol.Required("type"): "ha_network_map/scan_history"})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def _ws_history(hass, connection, msg):
+    """Private persisted metadata; memory-only read, no probe or Store write."""
+    history = hass.data.get(DOMAIN,{}).get("scan_history")
+    if history is None:
+        connection.send_error(msg["id"],"history_unavailable","Scan history is not loaded")
+        return
+    connection.send_result(msg["id"],history.history())
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "ha_network_map/compare_scans",
+    vol.Optional("before_id"): vol.All(str,vol.Length(min=1,max=36)),
+    vol.Optional("after_id"): vol.All(str,vol.Length(min=1,max=36)),
+})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def _ws_compare(hass,connection,msg):
+    """Compare already validated measurements without refreshing devices."""
+    history = hass.data.get(DOMAIN,{}).get("scan_history")
+    if history is None:
+        connection.send_error(msg["id"],"history_unavailable","Scan history is not loaded")
+        return
+    connection.send_result(msg["id"],history.comparison(msg.get("before_id"),msg.get("after_id")))
+
 def async_register_commands(hass: HomeAssistant) -> None:
     """Register every websocket command exported by this module."""
-    for handler in (_ws_list, _ws_scan, _ws_status):
+    for handler in (_ws_list, _ws_scan, _ws_status, _ws_history, _ws_compare):
         websocket_api.async_register_command(hass, handler)

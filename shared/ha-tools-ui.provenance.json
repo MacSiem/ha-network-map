@@ -1,0 +1,14 @@
+{
+  "canonical_source": "shared/ha-tools-ui.js",
+  "canonical_source_sha256": "029c06206e55abad9aa09dfcf65bb13027ec24ce6a0bfacc45a938891b27254e",
+  "upstream_read_only_source": "/Volumes/Samsung_SSD/dev/repos/ha-config-auditor/shared/ha-tools-ui.js",
+  "runtime": "custom_components/ha_network_map/www/ha-network-map.js",
+  "factory_bytes_sha256": "6f65fa30f5683c1169f65b1ae63f919d0d9d69af3f7928da6848eff9c932cc31",
+  "runtime_factory_start_byte": 247,
+  "runtime_factory_end_byte_exclusive": 2236,
+  "source_factory_start_byte": 0,
+  "source_factory_end_byte_exclusive": 1989,
+  "export_excluded": "CommonJS test export is excluded from IIFE runtime",
+  "global_api": false,
+  "maintenance": "Refresh canonical source and verbatim runtime factory together; update this provenance. Owner verifies exact slice equality and whole canonical source SHA."
+}
