@@ -66,3 +66,9 @@ class ComparisonTests(unittest.TestCase):
         for payload in [{"schema":99,"snapshots":[]},{"schema":2,"snapshots":[{}]},{"schema":2,"snapshots":rows}]:
             with self.assertRaises(ValueError): history.decode_history(payload,NOW)
         self.assertEqual(history.decode_history(None,NOW),([],"empty"))
+
+class UnknownCounts(unittest.TestCase):
+    def test_missing_or_incomparable_pair_has_unknown_delta_counts(self):
+        for result in [history.compare_snapshots(None,scan()),history.compare_snapshots(scan(),scan(public=True))]:
+            self.assertFalse(result['comparable'])
+            self.assertTrue(all(value is None for value in result['counts'].values()))

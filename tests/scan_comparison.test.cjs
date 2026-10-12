@@ -66,3 +66,54 @@ test('browser offline and mutable role revocation clear history without read or 
  f.dom.window.dispatchEvent(new f.dom.window.Event('online'));await flush();assert.equal(f.calls.length,count);
  }finally{f.close();}
 });
+
+test('unknown typed connection flags never authorize comparison reads',async()=>{
+ for(const flag of [undefined,'true',1,false]){
+  const f=fixture();try{f.card.hass=f.hass;await flush();f.calls.length=0;f.hass.connection.connected=flag;
+   await f.card._loadComparison();assert.equal(f.calls.filter(c=>/scan_history|compare_scans/.test(c.type)).length,0,String(flag));
+  }finally{f.close();}
+ }
+});
+test('connection events are authoritative even when hass was assigned before mounting',async()=>{
+ const f=fixture();try{
+  f.card.remove();const connection=new f.dom.window.EventTarget();connection.connected=true;
+  f.hass.connection=connection;f.card.hass=f.hass;f.dom.window.document.body.append(f.card);await flush();f.calls.length=0;
+  connection.dispatchEvent(new f.dom.window.Event('disconnected'));await f.card._loadComparison();
+  assert.equal(f.calls.filter(c=>/scan_history|compare_scans/.test(c.type)).length,0);
+  connection.dispatchEvent(new f.dom.window.Event('ready'));assert.equal(f.calls.filter(c=>/scan_history|compare_scans/.test(c.type)).length,0);
+  await f.card._loadComparison();assert.equal(f.calls.filter(c=>c.type.endsWith('/scan_history')).length,1);
+ }finally{f.close();}
+});
+test('browser offline event blocks reads despite stale navigator online true',async()=>{
+ const f=fixture();try{f.card.hass=f.hass;await flush();f.calls.length=0;
+  f.dom.window.dispatchEvent(new f.dom.window.Event('offline'));assert.equal(f.dom.window.navigator.onLine,true);
+  await f.card._loadComparison();assert.equal(f.calls.filter(c=>/scan_history|compare_scans/.test(c.type)).length,0);
+  assert.equal(f.card._comparison.error,'offline');f.dom.window.dispatchEvent(new f.dom.window.Event('online'));await flush();
+  assert.equal(f.calls.filter(c=>/scan_history|compare_scans/.test(c.type)).length,0);
+ }finally{f.close();}
+});
+test('group and active-role changes erase private comparison immediately',async()=>{
+ for(const change of ['group','inactive']){
+  const f=fixture();try{f.card.hass=f.hass;await flush();f.card.setActiveTab('comparison');await f.card._loadComparison();
+   assert.ok(f.card._comparison.data);if(change==='group')f.hass.user.group_ids=['changed'];else f.hass.user.is_active=false;
+   f.card.hass=f.hass;assert.equal(f.card._comparison.data,null,change);assert.doesNotMatch(f.card.shadowRoot.querySelector('#comparison').textContent,/192\.0\.2/);
+   if(change==='inactive'){const count=f.calls.length;await f.card._loadComparison();assert.equal(f.calls.length,count);}
+  }finally{f.close();}
+ }
+});
+test('incomparable pair does not show zero measured delta counts',async()=>{
+ const f=fixture();try{f.result.comparable=false;f.result.state='unconfirmed';f.result.reasons=['method_mismatch'];f.result.changes=[];
+  f.card.hass=f.hass;await flush();f.card.setActiveTab('comparison');await f.card._loadComparison();
+  assert.doesNotMatch(f.card.shadowRoot.querySelector('.comparison-counts')?.textContent||'',/New in scan: 0|Not in this scan: 0|IP changed: 0/);
+ }finally{f.close();}
+});
+test('deadline keeps one unresolved history wire and forbids another read until settlement',async()=>{
+ const f=fixture();try{f.card.hass=f.hass;await flush();f.card._invalidateComparison();
+  const timers=new Map();let next=0,late;
+  f.dom.window.setTimeout=(callback,delay)=>{timers.set(++next,{callback,delay});return next;};f.dom.window.clearTimeout=id=>timers.delete(id);
+  f.card._hass={...f.hass,callWS:command=>{f.calls.push(command);return new Promise(resolve=>late=resolve);}};
+  const read=f.card._loadComparison();const count=f.calls.length;[...timers.values()].find(t=>t.delay===10000).callback();await read;
+  await f.card._loadComparison();assert.equal(f.calls.length,count);assert.equal(f.card._comparison.error,'deadline');
+  late({status:'ready',snapshots:[]});await flush();assert.equal(f.card._comparison.data,null);
+ }finally{f.close();}
+});
