@@ -113,7 +113,7 @@ test('deadline keeps one unresolved history wire and forbids another read until 
   f.dom.window.setTimeout=(callback,delay)=>{timers.set(++next,{callback,delay});return next;};f.dom.window.clearTimeout=id=>timers.delete(id);
   f.card._hass={...f.hass,callWS:command=>{f.calls.push(command);return new Promise(resolve=>late=resolve);}};
   const read=f.card._loadComparison();const count=f.calls.length;[...timers.values()].find(t=>t.delay===10000).callback();await read;
-  await f.card._loadComparison();assert.equal(f.calls.length,count);assert.equal(f.card._comparison.error,'deadline');
-  late({status:'ready',snapshots:[]});await flush();assert.equal(f.card._comparison.data,null);
+  const repeated=f.card._loadComparison();await flush();assert.equal(f.calls.length,count);assert.equal(f.card._comparison.error,'deadline');
+  late({status:'ready',snapshots:[]});await repeated;await flush();assert.equal(f.card._comparison.data,null);
  }finally{f.close();}
 });
