@@ -1205,6 +1205,13 @@ class HaNetworkMap extends HTMLElement {
       const data = await hass.callWS(command);
       if (!current()) return false;
       if (!data || !Array.isArray(data.changes) || data.changes.length > 1024 || !Array.isArray(data.reasons) || data.reasons.some(r => typeof r !== 'string') || !data.counts || Object.values(data.counts).some(n => (data.comparable === false && n === null) ? false : !Number.isInteger(n) || n < 0) || data.changes.some(row => !row || !['new','not_in_scan','ip_changed','unchanged','unknown'].includes(row.kind) || [row.before,row.after].some(r => r && (!Array.isArray(r.open_ports) || typeof r.reachable !== 'boolean'))) || !['success','partial','unconfirmed','no_data'].includes(data.state)) throw {code:'invalid_response'};
+      // Show the actual server-selected pair, including default latest/previous.
+      for (const key of ['before','after']) {
+        const actualId=data[key]?.id;
+        if (typeof actualId==='string' && this._comparison.history.some(snapshot=>snapshot.id===actualId)) this._comparison[key]=actualId;
+      }
+      request.before=this._comparison.before;request.after=this._comparison.after;
+      wire.before=request.before;wire.after=request.after;
       this._comparison.data = data;
       this._comparison.state = data.state;
       this._comparison.page = 1;
