@@ -102,7 +102,7 @@ test('group and active-role changes erase private comparison immediately',async(
  }
 });
 test('incomparable pair does not show zero measured delta counts',async()=>{
- const f=fixture();try{f.result.comparable=false;f.result.state='unconfirmed';f.result.reasons=['method_mismatch'];f.result.changes=[];
+ const f=fixture();try{f.result.comparable=false;f.result.state='unconfirmed';f.result.reasons=['method_mismatch'];f.result.changes=[];f.result.counts=Object.fromEntries(Object.keys(f.result.counts).map(k=>[k,null]));
   f.card.hass=f.hass;await flush();f.card.setActiveTab('comparison');await f.card._loadComparison();
   assert.doesNotMatch(f.card.shadowRoot.querySelector('.comparison-counts')?.textContent||'',/New in scan: 0|Not in this scan: 0|IP changed: 0/);
  }finally{f.close();}
@@ -123,4 +123,18 @@ test('default selectors name the actual server-selected saved scans',async()=>{
   assert.equal(f.card.shadowRoot.querySelector('#comparison-before').value,f.result.before.id);
   assert.equal(f.card.shadowRoot.querySelector('#comparison-after').value,f.result.after.id);
  }finally{f.close();}
+});
+
+test('contradictory comparability or unmeasured delta counts cannot become green success',async()=>{
+ for(const kind of ['missing_boolean','false_success','count_mismatch','missing_count']){
+  const f=fixture();try{
+   if(kind==='missing_boolean')delete f.result.comparable;
+   if(kind==='false_success'){f.result.comparable=false;f.result.counts=Object.fromEntries(Object.keys(f.result.counts).map(k=>[k,null]));}
+   if(kind==='count_mismatch')f.result.counts.ip_changed=999;
+   if(kind==='missing_count')delete f.result.counts.unknown;
+   f.card.hass=f.hass;await flush();f.card.setActiveTab('comparison');await f.card._loadComparison();
+   assert.equal(f.card._comparison.state,'error',kind);assert.equal(f.card._comparison.error,'invalid_response',kind);
+   assert.equal(f.card._comparison.data,null,kind);
+  }finally{f.close();}
+ }
 });
