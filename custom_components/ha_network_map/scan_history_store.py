@@ -5,6 +5,8 @@ import asyncio
 from copy import deepcopy
 from datetime import datetime, timezone, timedelta
 import json
+import os
+import stat
 from pathlib import Path
 from homeassistant.helpers.storage import Store as HAStore
 from homeassistant.core import CoreState
@@ -21,26 +23,39 @@ class Store(HAStore):
     against the supported HA release. Comparison never calls these methods.
     """
     def _check_envelope(self):
-        path = Path(self.path)
+        # A single bounded descriptor read: never ask HA to reload/migrate or
+        # rename a corrupt file after this validation. Special files cannot block.
         try:
-            with path.open("rb") as file:
-                raw = file.read(MAX_BYTES + 1)
+            descriptor = os.open(self.path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
         except FileNotFoundError:
-            return
+            return None
+        with os.fdopen(descriptor, 'rb') as file:
+            info = os.fstat(file.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_BYTES:
+                raise ValueError('History must be a bounded regular file')
+            raw = file.read(MAX_BYTES + 1)
         if len(raw) > MAX_BYTES:
-            raise ValueError("History file too large")
-        envelope = json.loads(raw)
-        if not isinstance(envelope,dict) or type(envelope.get("version")) is not int or envelope["version"] != 1 or type(envelope.get("minor_version",1)) is not int or envelope.get("minor_version",1) != 1 or envelope.get("key") != self.key or "data" not in envelope:
-            raise ValueError("Unsupported history envelope")
-        # Validate before Store can auto-migrate or rename corrupted input.
-        decode_history(envelope["data"],datetime.now(timezone.utc))
+            raise ValueError('History file too large')
+        def unique_pairs(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise ValueError('Duplicate history key')
+                value[key] = item
+            return value
+        envelope = json.loads(raw.decode('utf-8'), object_pairs_hook=unique_pairs)
+        if not isinstance(envelope, dict) or set(envelope) - {'version','minor_version','key','data'} or type(envelope.get('version')) is not int or envelope['version'] != 1 or type(envelope.get('minor_version',1)) is not int or envelope.get('minor_version',1) != 1 or envelope.get('key') != self.key or 'data' not in envelope:
+            raise ValueError('Unsupported history envelope')
+        decode_history(envelope['data'], datetime.now(timezone.utc))
+        return envelope['data']
 
     async def async_load(self):
-        await self.hass.async_add_executor_job(self._check_envelope)
-        return await super().async_load()
+        return await self.hass.async_add_executor_job(self._check_envelope)
 
-    async def _async_write_data(self,data):
-        await super()._async_write_data(data)
+    async def _async_write_data(self, *arguments):
+        # Core2025.2 passes (path,data), current Core passes (data).
+        # Forward the exact supported call and confirm only actual completion.
+        await super()._async_write_data(*arguments)
         self._write_confirmed = True
 
     async def async_save(self,data):
@@ -68,7 +83,7 @@ class ScanHistory:
         try:
             payload = await self._store.async_load()
             self._snapshots,self._status = decode_history(payload,datetime.now(timezone.utc))
-        except (ValueError,TypeError,KeyError,OverflowError,OSError,HomeAssistantError,NotImplementedError):
+        except (ValueError,TypeError,KeyError,OverflowError,OSError,UnicodeError,RecursionError,HomeAssistantError,NotImplementedError):
             self._snapshots,self._status = [],"unavailable"
         self._writable = self._status != "unavailable"
         if self._writable and payload is not None:

@@ -180,7 +180,7 @@ def metadata(snapshot: dict) -> dict:
     return {key:deepcopy(value) for key,value in snapshot.items() if key not in ("records","schema","completed")}
 
 def compare_snapshots(before: dict | None, after: dict | None) -> dict:
-    result = {"state":"no_data","comparable":False,"reasons":["missing_pair"],"before":metadata(before) if before else None,"after":metadata(after) if after else None,"counts":{"new":0,"not_in_scan":0,"ip_changed":0,"unchanged":0,"unknown":0},"changes":[]}
+    result = {"state":"no_data","comparable":False,"reasons":["missing_pair"],"before":metadata(before) if before else None,"after":metadata(after) if after else None,"counts":{"new":None,"not_in_scan":None,"ip_changed":None,"unchanged":None,"unknown":None},"changes":[]}
     if before is None or after is None:
         return result
     before,after = validate_snapshot(before),validate_snapshot(after)
@@ -190,6 +190,7 @@ def compare_snapshots(before: dict | None, after: dict | None) -> dict:
     if mismatch:
         result.update(state="unconfirmed",reasons=mismatch)
         return result
+    result["counts"] = {key:0 for key in result["counts"]}
     complete = before["coverage"] == after["coverage"] == "full"
     result.update(state="success" if complete else "partial",comparable=True,reasons=sorted(set(before["reasons"]+after["reasons"])))
     old = {row["stable_id"]:row for row in before["records"] if row["stable_id"]}

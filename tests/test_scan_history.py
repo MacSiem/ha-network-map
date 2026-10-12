@@ -13,7 +13,7 @@ _spec.loader.exec_module(history)
 NOW = datetime(2026, 10, 12, 12, tzinfo=timezone.utc)
 
 def scan(rows=None, *, at=NOW, public=False, reasons=None, ports=(80,), skipped=0):
-    rows = rows if rows is not None else [{"device_id": "fixture-device", "name": "Fixture", "mac": None, "ip": "192.0.2.1", "reachable": True, "open_ports": [80]}]
+    rows = rows if rows is not None else [{"device_id": "fixture-device", "name": "Fixture", "mac": None, "ip": "192.0.2.1", "reachable": True, "open_ports": list(ports)}]
     return history.build_snapshot(rows, started=at.timestamp()-1, finished=at.timestamp(), ports=ports, timeout=.7, max_concurrent=16, include_public_ips=public, discovered=len(rows)+skipped, eligible=len(rows)+skipped, skipped={"device_cap": skipped}, reasons=reasons or [])
 
 class ComparisonTests(unittest.TestCase):
