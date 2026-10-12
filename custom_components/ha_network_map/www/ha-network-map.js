@@ -553,11 +553,17 @@ class HaNetworkMap extends HTMLElement {
     this._comparisonEpoch = 0;
     this._comparisonHistoryContext = null;
     this._comparisonRequest = null;
+    this._comparisonWire = null;
+    this._comparisonConnection = null;
+    this._comparisonListenersBound = false;
+    this._comparisonConnectionReady = false;
+    this._comparisonBrowserOnline = navigator.onLine !== false;
+    this._comparisonReady = () => { this._comparisonConnectionReady=this._hass?.connection?.connected === true;this._comparisonBoundary('context_changed'); };
+    this._comparisonDisconnected = () => { this._comparisonConnectionReady=false;this._comparisonBoundary('connection'); };
     this._comparison = { history: [], historyLoaded: false, data: null, state: 'not_checked', error: '', before: '', after: '', page: 1, detail: null };
-    this._comparisonConnectivity = () => {
-      this._invalidateComparison();
-      this._comparison.error = navigator.onLine === false ? 'offline' : 'context_changed';
-      this._doRender();
+    this._comparisonConnectivity = event => {
+      this._comparisonBrowserOnline = event.type === 'online';
+      this._comparisonBoundary(this._comparisonBrowserOnline ? 'context_changed' : 'offline');
     };
     this.activeTab = 'devices';
     this._title = 'Network Map';
@@ -706,6 +712,7 @@ class HaNetworkMap extends HTMLElement {
     const session = this._readSession(hass);
     const sessionChanged = this._dataSession && !this._sameReadSession(this._dataSession, session);
     this._hass = hass;
+    this._bindComparisonConnection();
     this._comparisonLastContext = this._comparisonContext();
     if (!this._sameComparisonContext(previousComparisonContext, this._comparisonContext())) {
       this._invalidateComparison();
@@ -914,7 +921,7 @@ class HaNetworkMap extends HTMLElement {
   }
 
   _canScan() {
-    return this._hass?.user?.is_admin === true;
+    return this._hass?.user?.is_admin === true && this._hass.user.is_active !== false;
   }
 
   async _scanAllSubnets() {
@@ -973,6 +980,7 @@ class HaNetworkMap extends HTMLElement {
 
   connectedCallback() {
     this._disconnected = false;
+    this._bindComparisonConnection();
     window.addEventListener('offline', this._comparisonConnectivity);
     window.addEventListener('online', this._comparisonConnectivity);
     if (this._hass && this._firstHassRender) {
@@ -983,6 +991,7 @@ class HaNetworkMap extends HTMLElement {
 
   disconnectedCallback() {
     this._disconnected = true;
+    this._unbindComparisonConnection();
     window.removeEventListener('offline', this._comparisonConnectivity);
     window.removeEventListener('online', this._comparisonConnectivity);
     this._invalidateComparison();
@@ -1088,12 +1097,40 @@ class HaNetworkMap extends HTMLElement {
     return request.promise;
   }
 
+  _comparisonBoundary(reason) {
+    this._invalidateComparison();this._comparison.error=reason;
+    this._scanEpoch=(this._scanEpoch||0)+1;this._scanInProgress=false;
+    if (!this._disconnected) this._doRender();
+  }
+
+  _unbindComparisonConnection() {
+    this._comparisonConnection?.removeEventListener?.('ready',this._comparisonReady);
+    this._comparisonConnection?.removeEventListener?.('disconnected',this._comparisonDisconnected);
+    this._comparisonConnection=null;this._comparisonListenersBound=false;this._comparisonConnectionReady=false;
+  }
+
+  _bindComparisonConnection() {
+    const connection=this._hass?.connection;
+    if (connection!==this._comparisonConnection) {
+      const hadConnection=Boolean(this._comparisonConnection);
+      this._unbindComparisonConnection();this._comparisonConnection=connection;
+      this._comparisonConnectionReady=connection?.connected === true;
+      if(hadConnection)this._invalidateComparison();
+    }
+    if(this.isConnected && connection?.addEventListener && !this._comparisonListenersBound){
+      connection.addEventListener('ready',this._comparisonReady);
+      connection.addEventListener('disconnected',this._comparisonDisconnected);
+      this._comparisonListenersBound=true;
+    }
+  }
+
   _comparisonContext() {
     const hass = this._hass;
-    return { connection: hass?.connection, connected: hass?.connection?.connected !== false,
-      callWS: hass?.callWS, user: hass?.user?.id, admin: hass?.user?.is_admin === true,
+    return { connection: hass?.connection, connected: hass?.connection?.connected === true && this._comparisonConnectionReady === true,
+      callWS: hass?.callWS, user: hass?.user?.id, admin: hass?.user?.is_admin === true && hass.user.is_active !== false,
+      active: hass?.user?.is_active, owner: hass?.user?.is_owner === true, groups: JSON.stringify(hass?.user?.group_ids || []),
       language: hass?.language || this._lang, source: location.origin,
-      online: navigator.onLine !== false };
+      online: this._comparisonBrowserOnline && navigator.onLine !== false };
   }
 
   _sameComparisonContext(a, b) {
@@ -1110,6 +1147,7 @@ class HaNetworkMap extends HTMLElement {
 
   _loadComparison() {
     // Read-only commands only; no automatic retry on failure or context change.
+    this._bindComparisonConnection();
     const context = this._comparisonContext();
     if (this._disconnected || !context.admin || !context.callWS || !context.online || !context.connected) {
       this._invalidateComparison();
@@ -1119,6 +1157,15 @@ class HaNetworkMap extends HTMLElement {
       return Promise.resolve(false);
     }
     if (this._comparisonHistoryContext && !this._sameComparisonContext(this._comparisonHistoryContext,context)) this._invalidateComparison();
+    if (this._comparisonWire) {
+      const wire=this._comparisonWire;
+      if (wire.before!==this._comparison.before || wire.after!==this._comparison.after || !this._sameComparisonContext(wire.context,context)) {
+        this._comparisonRequest?.cancel();this._comparisonRequest=null;
+        this._comparison.state='not_checked';this._comparison.error='context_changed';this._doRender();
+      }
+      return wire.promise;
+    }
+
     const before = this._comparison.before, after = this._comparison.after;
     const previous = this._comparisonRequest;
     if (previous && previous.before === before && previous.after === after && this._sameComparisonContext(context,previous.context)) return previous.promise;
@@ -1157,13 +1204,17 @@ class HaNetworkMap extends HTMLElement {
       if (after) command.after_id = after;
       const data = await hass.callWS(command);
       if (!current()) return false;
-      if (!data || !Array.isArray(data.changes) || data.changes.length > 1024 || !Array.isArray(data.reasons) || data.reasons.some(r => typeof r !== 'string') || !data.counts || Object.values(data.counts).some(n => !Number.isInteger(n) || n < 0) || data.changes.some(row => !row || !['new','not_in_scan','ip_changed','unchanged','unknown'].includes(row.kind) || [row.before,row.after].some(r => r && (!Array.isArray(r.open_ports) || typeof r.reachable !== 'boolean'))) || !['success','partial','unconfirmed','no_data'].includes(data.state)) throw {code:'invalid_response'};
+      if (!data || !Array.isArray(data.changes) || data.changes.length > 1024 || !Array.isArray(data.reasons) || data.reasons.some(r => typeof r !== 'string') || !data.counts || Object.values(data.counts).some(n => (data.comparable === false && n === null) ? false : !Number.isInteger(n) || n < 0) || data.changes.some(row => !row || !['new','not_in_scan','ip_changed','unchanged','unknown'].includes(row.kind) || [row.before,row.after].some(r => r && (!Array.isArray(r.open_ports) || typeof r.reachable !== 'boolean'))) || !['success','partial','unconfirmed','no_data'].includes(data.state)) throw {code:'invalid_response'};
       this._comparison.data = data;
       this._comparison.state = data.state;
       this._comparison.page = 1;
       return true;
     };
-    request.promise = Promise.race([work(),expired]).catch(error => {
+    const wire={before,after,context,promise:null};this._comparisonWire=wire;
+    const transport=work();
+    const releaseWire=()=>{if(this._comparisonWire===wire){this._comparisonWire=null;if(!this._disconnected)this._doRender();}};
+    transport.then(releaseWire,releaseWire);
+    request.promise = Promise.race([transport,expired]).catch(error => {
       if (!current()) return false;
       this._comparison.state = error.code === 'cancelled' ? 'not_checked' : 'error';
       this._comparison.error = ['deadline','unauthorized','unknown_command','history_unavailable','invalid_response'].includes(error?.code) ? error.code : 'read_failed';
@@ -1177,6 +1228,7 @@ class HaNetworkMap extends HTMLElement {
         this._doRender();
       }
     });
+    wire.promise=request.promise;
     this._doRender();
     return request.promise;
   }
@@ -1204,11 +1256,11 @@ class HaNetworkMap extends HTMLElement {
     const labels = {new:'comparisonNew',not_in_scan:'comparisonMissing',ip_changed:'comparisonIp',unchanged:'comparisonSame',unknown:'comparisonUnknownRow'};
     const option = s => `<option value="${_esc(s.id)}">${_esc(s.finished_at)} UTC · ${_esc(this._t(s.coverage === 'full' ? 'comparisonFull' : 'comparisonPartial'))}</option>`;
     const select = (id,title,value) => `<label for="${id}">${_esc(title)}<select id="${id}"><option value="">${_esc(title)}</option>${c.history.map(option).join('')}</select></label>`;
-    let h = `<section id="comparison" aria-labelledby="comparison-title"><h2 id="comparison-title">${_esc(this._t('comparisonTab'))}</h2><div class="comparison-controls"><button id="comparison-read" ${c.state === 'loading' ? 'disabled' : ''}>${_esc(this._t(c.state === 'loading' ? 'comparisonLoading' : 'comparisonRead'))}</button>${c.history.length ? select('comparison-before',this._t('comparisonBefore'),c.before) + select('comparison-after',this._t('comparisonAfter'),c.after) : ''}</div><div aria-live="polite">${ui.statusHtml(c.state === 'loading' ? 'not_checked' : c.state)}${c.error ? '<p>' + _esc(this._comparisonReason(c.error)) + '</p>' : ''}</div><p>${_esc(this._t('comparisonAbsence'))}</p>`;
+    let h = `<section id="comparison" aria-labelledby="comparison-title"><h2 id="comparison-title">${_esc(this._t('comparisonTab'))}</h2><div class="comparison-controls"><button id="comparison-read" ${c.state === 'loading' || this._comparisonWire ? 'disabled' : ''}>${_esc(this._t(c.state === 'loading' ? 'comparisonLoading' : 'comparisonRead'))}</button>${c.history.length ? select('comparison-before',this._t('comparisonBefore'),c.before) + select('comparison-after',this._t('comparisonAfter'),c.after) : ''}</div><div aria-live="polite">${ui.statusHtml(c.state === 'loading' ? 'not_checked' : c.state)}${c.error ? '<p>' + _esc(this._comparisonReason(c.error)) + '</p>' : ''}</div><p>${_esc(this._t('comparisonAbsence'))}</p>`;
     if (c.historyStatus) h += `<p>${_esc(this._t('comparisonStatus'))}: ${_esc({ready:this._lang === 'pl' ? 'Gotowa' : 'Ready',empty:this._lang === 'pl' ? 'Pusta' : 'Empty',migrated:this._lang === 'pl' ? 'Odczyt po migracji w pamięci' : 'Read after in-memory migration',unavailable:this._comparisonReason('history_unavailable'),save_failed:this._lang === 'pl' ? 'Ostatni zapis nieudany' : 'Last save failed'}[c.historyStatus] || c.historyStatus)}</p>`;
     if (!data) return h + `<p>${_esc(this._t('comparisonNoData'))}</p></section>`;
     h += `<div class="comparison-metadata">${this._comparisonMeta(data.before,this._t('comparisonBefore'))}${this._comparisonMeta(data.after,this._t('comparisonAfter'))}</div><p>${_esc(this._t('comparisonReasons'))}: ${_esc(data.reasons.map(r => this._comparisonReason(r)).join('; ') || '—')}</p>`;
-    h += `<div class="comparison-counts">${Object.entries(data.counts).map(([key,count]) => `<span>${_esc(this._t(labels[key] || key))}: ${_esc(count)}</span>`).join('')}</div>`;
+    h += `<div class="comparison-counts">${Object.entries(data.counts).map(([key,count]) => `<span>${_esc(this._t(labels[key] || key))}: ${_esc(data.comparable === true ? count : '—')}</span>`).join('')}</div>`;
     const pageCount = Math.max(1,Math.ceil(data.changes.length/20));
     c.page = Math.max(1,Math.min(c.page,pageCount));
     const rows = data.changes.slice((c.page-1)*20,c.page*20);
