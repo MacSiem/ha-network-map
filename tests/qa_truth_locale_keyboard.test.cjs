@@ -14,13 +14,14 @@ function fixture(language = 'en') {
   card._buildDeviceList();
   return { dom, card };
 }
-test('temporary list failure reports its cause and preserves existing rows; successful retry clears it', async () => {
+test('temporary list failure reports safe guidance and preserves existing rows; successful retry clears it', async () => {
   const { dom, card } = fixture();
   try {
     const rows = card.devices;
     card._hass.callWS = async () => { throw { code: 'list_failed', message: 'QA connection lost' }; };
     await card._reloadFromApi(); card._doRender();
-    assert.ok(card.shadowRoot.textContent.includes('QA connection lost'));
+    assert.equal(card.shadowRoot.textContent.includes('QA connection lost'), false);
+    assert.ok(card.shadowRoot.textContent.includes('Could not load devices. Try again.'));
     assert.equal(card.shadowRoot.textContent.includes('integration is missing'), false);
     assert.equal(card.devices, rows);
     card._hass.callWS = async () => ({ devices: card._integrationDevices });
@@ -97,3 +98,31 @@ test('category override updates the device icon as well as its label', () => {
     assert.ok(card.shadowRoot.querySelector('[aria-label="QA 0"]').textContent.includes('📷'));
   } finally { dom.window.close(); }
 });
+
+for (const language of ['en', 'pl']) {
+  for (const response of [null, {}, { devices: [null] }]) {
+    test(`malformed list preserves rows and offers safe retry in ${language}: ${JSON.stringify(response)}`, async () => {
+      const { dom, card } = fixture(language);
+      try {
+        const rows = card.devices;
+        card._hass.callWS = async () => response;
+        await card._reloadFromApi(); card._doRender();
+        assert.equal(card.devices, rows);
+        assert.ok(card.shadowRoot.querySelector('#retryDevices'));
+        assert.ok(card.shadowRoot.textContent.includes(language === 'pl' ? 'Nie udało się pobrać urządzeń' : 'Could not load devices'));
+        assert.equal(card.shadowRoot.querySelector('[data-result-state="success"]'), null);
+      } finally { dom.window.close(); }
+    });
+  }
+  test(`list errors never show raw body or exception in ${language}`, async () => {
+    const { dom, card } = fixture(language);
+    try {
+      for (const error of [new Error('RAW_LIST_SECRET'), 'RAW_LIST_SECRET', { code: 'unauthorized', message: 'RAW_LIST_SECRET' }, { body: { message: 'RAW_LIST_SECRET' } }]) {
+        card._hass.callWS = async () => { throw error; };
+        await card._reloadFromApi(); card._doRender();
+        assert.equal(card.shadowRoot.textContent.includes('RAW_LIST_SECRET'), false);
+        assert.ok(card.shadowRoot.querySelector('#retryDevices'));
+      }
+    } finally { dom.window.close(); }
+  });
+}
