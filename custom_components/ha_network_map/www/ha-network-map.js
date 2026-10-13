@@ -632,7 +632,9 @@ class HaNetworkMap extends HTMLElement {
         // Bindings tab
         deviceBindings: 'Device Bindings', suggestedBindings: 'Suggested Bindings', accept: 'Accept',
         reject: 'Reject', manualBind: 'Manual Bind', selectEntity: '— Select entity —',
-        noBoundDevices: 'No bindings yet. Suggest bindings or bind manually.',
+        bindingHelp: 'A binding is an optional link between a device already on this map and a device_tracker entity. Automatic discovery (for example eero) does not require it. The link adds a tracker reference in this card; it does not change the device name, IP address, tracker state or TCP scan. Choose a tracker, then enter the mapped device’s exact IP or displayed name. The name identifies an existing row, not a custom label or DNS host. Links are saved only in this browser.',
+        bindingTargetPrompt: 'IP or exact displayed name of a device already on this map (not a new label):',
+        noBoundDevices: 'No manual tracker links yet. Device discovery works without them.',
         bind: 'Bind',
         // Status
         reachableStatus: 'Reachable', unreachableStatus: 'Unreachable',
@@ -664,7 +666,9 @@ class HaNetworkMap extends HTMLElement {
         // Bindings tab
         deviceBindings: 'Powiązania urządzeń', suggestedBindings: 'Sugerowane powiązania', accept: 'Zaakceptuj',
         reject: 'Odrzuć', manualBind: 'Powiąż ręcznie', selectEntity: '— Wybierz encję —',
-        noBoundDevices: 'Brak powiązań. Zasugeruj powiązania lub powiąż ręcznie.',
+        bindingHelp: 'Powiązanie to opcjonalny odnośnik między urządzeniem już widocznym na mapie a encją device_tracker. Automatyczne wykrywanie (np. eero) go nie wymaga. Powiązanie dodaje odniesienie do trackera w tej karcie; nie zmienia nazwy urządzenia, IP, stanu trackera ani skanu TCP. Wybierz tracker, a następnie wpisz dokładne IP lub nazwę urządzenia widoczną na mapie. Nazwa wskazuje istniejący wiersz, nie jest nową etykietą ani hostem DNS. Powiązania są zapisane tylko w tej przeglądarce.',
+        bindingTargetPrompt: 'IP lub dokładna nazwa urządzenia już widocznego na mapie (nie nowa etykieta):',
+        noBoundDevices: 'Brak ręcznych powiązań z trackerami. Wykrywanie urządzeń działa bez nich.',
         bind: 'Powiąż',
         // Status
         reachableStatus: 'Dostępne', unreachableStatus: 'Niedostępne',
@@ -1877,7 +1881,7 @@ class HaNetworkMap extends HTMLElement {
   }
 
   _renderBindingsTab() {
-    let h = '<div>';
+    let h = '<div><p class="bindings-help" style="line-height:1.6;overflow-wrap:anywhere">' + _esc(this._t('bindingHelp')) + '</p>';
 
     // Suggested bindings
     if (this._suggestedBindings.length > 0) {
@@ -2168,7 +2172,7 @@ class HaNetworkMap extends HTMLElement {
         const deviceSelect = this.shadowRoot.querySelector('#deviceSelect');
         if (deviceSelect && deviceSelect.value) {
           const entityId = deviceSelect.value;
-          const ip = prompt(this._lang === 'pl' ? 'Wprowadź IP lub nazwę urządzenia:' : 'Enter device IP or name:');
+          const ip = prompt(this._t('bindingTargetPrompt'));
           if (ip) {
             this._setBinding(ip, entityId);
             deviceSelect.value = '';

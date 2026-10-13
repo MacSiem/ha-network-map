@@ -110,6 +110,25 @@ title: Network Map
 router_ip: 192.168.1.1
 ```
 
+## Bindings: optional links to device trackers
+
+A binding links a device already displayed on the map to a Home Assistant
+`device_tracker.*` entity. The card shows this reference in **HA Entity** and
+**Bindings**. Devices discovered automatically, including eero trackers, do not
+need a manual binding to appear on the map.
+
+In **Bindings**, select the tracker entity, then choose **Bind** and enter the
+map device's exact IP (for example `192.168.1.42`) or its displayed name. The name
+must identify an existing map row: it is not a new label or a DNS hostname to
+resolve. For a reachable device you can also open its details and use **Bind**
+to select a tracker for that particular row.
+
+Bindings do not rename devices, assign IP addresses, change tracker states or
+change the integration's TCP reachability measurements. They are local to this
+browser and origin; another browser does not inherit them. A uniquely matched
+device uses its existing stable identity where available, so the link can
+survive an IP change. **Unbind** removes the local reference.
+
 ## Entities
 
 This integration exposes **no entities**. It is a WebSocket API + bundled
