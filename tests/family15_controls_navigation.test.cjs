@@ -191,3 +191,19 @@ test('editor repaint retains committed input draft and caret without emitting an
     assert.equal(changes, 1);
   } finally { f.dom.window.close(); }
 });
+
+
+test('editor mounted before hass renders when hass arrives and ordinary locale assignments retain caret', async () => {
+  const f = await setup();
+  try {
+    const editor = f.dom.window.document.createElement('ha-network-map-editor');
+    editor.setConfig({ title: 'Family' }); f.dom.window.document.body.append(editor);
+    editor.hass = f.hass;
+    let field = editor.shadowRoot.getElementById('cf_title'); assert.ok(field, 'A late hass assignment must render the configured editor');
+    let changes = 0; editor.addEventListener('config-changed', () => changes++);
+    field.focus(); field.value = 'Family draft'; field.dispatchEvent(new f.dom.window.Event('input', { bubbles: true })); field.setSelectionRange(2, 6, 'backward');
+    editor.hass = { ...f.hass, language: 'pl' }; field = editor.shadowRoot.getElementById('cf_title');
+    assert.equal(field.labels[0].textContent, 'Tytuł'); assert.equal(field.value, 'Family draft'); assert.equal(editor.shadowRoot.activeElement, field);
+    assert.deepEqual([field.selectionStart,field.selectionEnd,field.selectionDirection],[2,6,'backward']); assert.equal(changes,1);
+  } finally { f.dom.window.close(); }
+});
