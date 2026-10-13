@@ -836,6 +836,7 @@ class HaNetworkMap extends HTMLElement {
     this._lastScanTime = null;
     this._listError = false;
     this._scanError = null;
+    this._scanAction = { state: 'not_checked', reason: null };
     this._deviceRegistry = [];
     this._includeNonNetwork = false;
     this._devicePrefs = {};
@@ -977,6 +978,7 @@ class HaNetworkMap extends HTMLElement {
       this._invalidateComparison();
       this._scanEpoch = (this._scanEpoch || 0) + 1;
       this._scanInProgress = false;
+      this._scanAction = { state: 'not_checked', reason: null };
       if (this.activeTab === 'comparison') this._doRender();
     }
     this._dataSession = session;
@@ -1183,6 +1185,38 @@ class HaNetworkMap extends HTMLElement {
     return this._hass?.user?.is_admin === true && this._hass.user.is_active !== false;
   }
 
+  _scanMessage(code) {
+    const pl = this._lang === 'pl';
+    const messages = {
+      unauthorized: ['Administrator permission is required. Try again after checking permissions.', 'Wymagane są uprawnienia administratora. Sprawdź uprawnienia i spróbuj ponownie.'],
+      scan_failed: ['Scan completion could not be confirmed. Check the connection before scanning again.', 'Nie potwierdzono zakończenia skanu. Sprawdź połączenie przed ponownym skanowaniem.'],
+      unconfirmed: ['Scan completion could not be confirmed. Check the connection before scanning again.', 'Nie potwierdzono zakończenia skanu. Sprawdź połączenie przed ponownym skanowaniem.'],
+      queued: ['Another scan is active. This request did not confirm a new completed scan. No retry was sent.', 'Inny skan trwa. To żądanie nie potwierdziło nowego zakończonego skanu. Nie wysłano ponownej próby.'],
+      partial: ['The scan completed, but the device list could not be read. Retry the device read.', 'Skan zakończono, ale nie udało się odczytać listy urządzeń. Ponów odczyt urządzeń.'],
+      success: ['Scan completed. Device availability remains a separate measurement.', 'Skan zakończono. Dostępność urządzeń pozostaje osobnym pomiarem.'],
+      no_data: ['Scan completed with no devices in the discovered scope.', 'Skan zakończono bez urządzeń w wykrytym zakresie.'],
+    };
+    if (code === 'unknown_command') return this._integrationMissingHint();
+    if (code === 'list_failed' || code === 'invalid_response') return this._t('listFailed');
+    return (messages[code] || messages.unconfirmed)[pl ? 1 : 0];
+  }
+
+  _scanFailureCode(error) {
+    return ['unknown_command', 'unauthorized', 'scan_failed', 'list_failed'].includes(error?.code)
+      ? error.code : 'unconfirmed';
+  }
+
+  _completedScan(status) {
+    // scan() returns queued:false only after finishing; the lock response can
+    // carry an older finished timestamp and must never prove this request.
+    return !!status && typeof status === 'object' && !Array.isArray(status)
+      && status.queued === false
+      && Number.isFinite(status.last_scan_started_at) && status.last_scan_started_at > 0
+      && Number.isFinite(status.last_scan_finished_at) && status.last_scan_finished_at >= status.last_scan_started_at
+      && ['device_count', 'with_ip', 'reachable'].every(key => Number.isInteger(status[key]) && status[key] >= 0)
+      && status.with_ip <= status.device_count && status.reachable <= status.with_ip;
+  }
+
   async _scanAllSubnets() {
     // v5: delegate to the bundled Python integration's server-side scan.
     // The previous browser-side path (per-IP fetch() HEAD probes against
@@ -1199,7 +1233,7 @@ class HaNetworkMap extends HTMLElement {
     if (this._scanInProgress || this._scanTransportPending || !this._canScan()) return;
     if (navigator.onLine === false || this._hass?.connection?.connected === false || this._disconnected) return;
     if (!this._hass) {
-      this._scanError = this._integrationMissingHint();
+      this._scanError = 'unknown_command';
       this._doRender();
       return;
     }
@@ -1212,6 +1246,7 @@ class HaNetworkMap extends HTMLElement {
     this._listError = false;
     this._scanError = null;
     this._scanProgress = { current: 0, total: 0 };
+    this._scanAction = { state: 'not_checked', reason: null };
     this._doRender();
 
     try {
@@ -1219,15 +1254,20 @@ class HaNetworkMap extends HTMLElement {
       if (!currentScan()) return;
       this._invalidateComparison();
       this._comparison.error = 'context_changed';
-      this._lastScanStatus = status || {};
-      this._lastScanTime = Number.isFinite(status?.last_scan_finished_at) && status.last_scan_finished_at > 0
-        ? Math.floor(status.last_scan_finished_at * 1000)
-        : null;
-      await this._reloadFromApi();
+      const completed = this._completedScan(status);
+      const scanAction = completed
+        ? { state: status.device_count === 0 ? 'no_data' : 'success', reason: status.device_count === 0 ? 'no_data' : 'success' }
+        : { state: 'unconfirmed', reason: status?.queued === true ? 'queued' : 'unconfirmed' };
+      this._scanAction = completed ? { state: 'not_checked', reason: null } : scanAction;
+      if (completed) this._lastScanTime = Math.floor(status.last_scan_finished_at * 1000);
+      const refreshed = await this._reloadFromApi();
+      if (!currentScan()) return;
+      this._scanAction = completed && (!refreshed || this._listError)
+        ? { state: 'partial', reason: 'partial' } : scanAction;
     } catch (e) {
       if (!currentScan()) return;
-      console.warn('[ha-network-map] scan failed:', e);
-      this._scanError = (e && e.message) ? e.message : this._integrationMissingHint();
+      const code = this._scanFailureCode(e);
+      this._scanAction = { state: ['unauthorized', 'unknown_command'].includes(code) ? 'error' : 'unconfirmed', reason: code };
     } finally {
       this._scanTransportPending = false;
       if (!currentScan()) return;
@@ -1335,7 +1375,8 @@ class HaNetworkMap extends HTMLElement {
       try {
         const res = await hass.callWS({ type: 'ha_network_map/list_devices', include_non_network: includeNonNetwork });
         if (!current()) return false;
-        const list = Array.isArray(res?.devices) ? res.devices : [];
+        if (!Array.isArray(res?.devices) || res.devices.some(d => !d || typeof d !== 'object' || Array.isArray(d))) throw { code: 'invalid_response' };
+        const list = res.devices;
         this._integrationDevices = list;
         const reachMap = {};
         for (const d of list) if (d?.ip) reachMap[d.ip] = d.reachable === true;
@@ -1346,11 +1387,8 @@ class HaNetworkMap extends HTMLElement {
         return true;
       } catch (e) {
         if (!current()) return false;
-        console.warn('[ha-network-map] list_devices failed:', e);
         this._listError = true;
-        this._scanError = e?.code === 'unknown_command'
-          ? this._integrationMissingHint()
-          : this._t('listFailed') + (e?.message ? ' ' + e.message : '');
+        this._scanError = ['unknown_command', 'unauthorized'].includes(e?.code) ? e.code : 'list_failed';
         return true;
       } finally {
         if (this._readRequest === request) {
@@ -1364,6 +1402,7 @@ class HaNetworkMap extends HTMLElement {
 
   _comparisonBoundary(reason) {
     this._invalidateComparison();this._comparison.error=reason;
+    if (this._scanInProgress) this._scanAction = { state: 'unconfirmed', reason: 'unconfirmed' };
     this._scanEpoch=(this._scanEpoch||0)+1;this._scanInProgress=false;
     if (!this._disconnected) this._doRender();
   }
@@ -1755,7 +1794,8 @@ class HaNetworkMap extends HTMLElement {
       '<button class="tab-btn ' + (this.activeTab === 'bindings' ? 'active' : '') + '" id="tab-bindings" data-tab="bindings">' + this._t('bindingsTab') + '</button>' +
       '</div>' +
       (!this._canScan() ? '<div role="status" style="margin:8px 12px;padding:10px 14px;font-size:13px;">' + _esc(this._t('scanAdminRequired')) + '</div>' : '') +
-      (this._scanError ? '<div style="margin:8px 12px;padding:10px 14px;background:var(--bento-error-light);color:var(--bento-error);border:1px solid var(--bento-error-border);border-radius:var(--bento-radius-sm);font-size:13px;">⚠️ ' + _esc(this._scanError) + (this._listError ? ' <button type="button" class="rb" id="retryDevices">' + this._t('retry') + '</button>' : '') + '</div>' : '') +
+      (this._scanError ? '<div style="margin:8px 12px;padding:10px 14px;background:var(--bento-error-light);color:var(--bento-error);border:1px solid var(--bento-error-border);border-radius:var(--bento-radius-sm);font-size:13px;">⚠️ ' + createUiV3({language:this._lang}).statusHtml('error') + ' ' + _esc(this._scanMessage(this._scanError)) + (this._listError ? ' <button type="button" class="rb" id="retryDevices">' + this._t('retry') + '</button>' : '') + '</div>' : '') +
+      '<div id="scanActionResult" role="status" style="margin:8px 12px;">' + createUiV3({language:this._lang}).statusHtml(this._scanAction?.state || 'not_checked') + (this._scanAction?.reason ? ' ' + _esc(this._scanMessage(this._scanAction.reason)) : '') + '</div>' +
       content +
       '</div>';
 

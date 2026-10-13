@@ -60,9 +60,9 @@ async def _ws_list(
     """Return the device map without touching the network."""
     try:
         devices = await _scanner(hass).list_devices(include_non_network=msg["include_non_network"])
-    except Exception as err:  # pragma: no cover - defensive
-        _LOGGER.exception("list_devices failed: %s", err)
-        connection.send_error(msg["id"], "list_failed", str(err))
+    except Exception:  # pragma: no cover - defensive
+        _LOGGER.warning("Device list read failed")
+        connection.send_error(msg["id"], "list_failed", "Device list read failed")
         return
     connection.send_result(msg["id"], {"devices": devices})
 
@@ -88,9 +88,9 @@ async def _ws_scan(
             max_concurrent=msg["max_concurrent"],
             include_public_ips=msg["include_public_ips"],
         )
-    except Exception as err:  # pragma: no cover - defensive
-        _LOGGER.exception("scan failed: %s", err)
-        connection.send_error(msg["id"], "scan_failed", str(err))
+    except Exception:  # pragma: no cover - defensive
+        _LOGGER.warning("Network scan failed")
+        connection.send_error(msg["id"], "scan_failed", "Network scan failed")
         return
     connection.send_result(msg["id"], status)
 
