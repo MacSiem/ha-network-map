@@ -40,7 +40,7 @@ async function setup(language = 'en', observerAvailable = true) {
   const observer = () => observers.findLast(item => !item.disconnected && item.target === root.querySelector('.ht-device-layout'));
   const resize = width => { assert.ok(observer(), 'Inventory observes its own available container'); observer().deliver(width); };
   const records = () => Array.from(root.querySelectorAll('.ht-device-records > details'));
-  const table = () => root.querySelector('table[data-device-records]');
+  const table = () => root.querySelector('table[data-device-records]') || root.querySelector(network ? '.tw table' : '.device-table');
   const search = () => root.querySelector(network ? '#sI' : '.search-box');
   return { dom, card, root, hass, requests, names, observers, observer, resize, render, records, table, search };
 }
