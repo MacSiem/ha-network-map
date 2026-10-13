@@ -354,3 +354,47 @@ class ScanBoundaryTests(unittest.IsolatedAsyncioTestCase):
         completed = await pending
         self.assertFalse(completed["queued"])
         self.assertIsNotNone(completed["last_scan_finished_at"])
+
+    async def test_addressless_service_does_not_make_network_comparison_partial(self):
+        snapshots = []
+        class History:
+            async def async_append(self, snapshot):
+                snapshots.append(snapshot)
+                return 'saved'
+        network = self.make_scanner()
+        network._history = History()
+        phase = [0]
+        def merge():
+            network._devices['service'] = scanner.Device(key='service', name='Home Assistant service', kind='service')
+            network._devices['a'] = scanner.Device(key='a', name='QA A', ip='127.0.0.1' if not phase[0] else '127.0.0.4', mac='02:61:00:00:00:01')
+            key = 'b' if not phase[0] else 'c'
+            network._devices[key] = scanner.Device(key=key, name=key, ip='127.0.0.2', mac='02:61:00:00:00:02' if not phase[0] else '02:61:00:00:00:03')
+        network._merge_registry_sources = merge
+        async def probe(*args): return 'open'
+        network._tcp_status = probe
+        await network.scan(ports=[8123])
+        phase[0] = 1
+        await network.scan(ports=[8123])
+        self.assertEqual([s['coverage'] for s in snapshots], ['full', 'full'])
+        self.assertEqual([s['discovered_count'] for s in snapshots], [2, 2])
+        from _ha_network_map_test_pkg.scan_history import compare_snapshots
+        result = compare_snapshots(*snapshots)
+        self.assertEqual(result['state'], 'success')
+        self.assertEqual(result['counts'], {'new':1, 'not_in_scan':1, 'ip_changed':1, 'unchanged':0, 'unknown':0})
+
+    async def test_network_device_without_ip_still_marks_partial_coverage(self):
+        snapshots = []
+        class History:
+            async def async_append(self, snapshot):
+                snapshots.append(snapshot)
+                return 'saved'
+        network = self.make_scanner()
+        network._history = History()
+        def merge():
+            network._devices['mac'] = scanner.Device(key='mac', name='QA MAC only', kind='service', mac='02:61:00:00:00:01')
+            network._devices['zigbee'] = scanner.Device(key='zigbee', name='QA Zigbee', kind='zigbee')
+        network._merge_registry_sources = merge
+        await network.scan(ports=[8123])
+        self.assertEqual(snapshots[0]['coverage'], 'partial')
+        self.assertEqual(snapshots[0]['skipped']['no_ip'], 2)
+        self.assertIn('no_ip', snapshots[0]['reasons'])
