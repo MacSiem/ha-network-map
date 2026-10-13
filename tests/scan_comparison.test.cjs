@@ -28,6 +28,15 @@ test('readonly role makes no history requests and revocation erases private data
  f.card.hass={...f.hass,user:{id:'ordinary',is_admin:false}};assert.equal(f.card._comparison.data,null);assert.equal(f.card._comparison.history.length,0);assert.doesNotMatch(f.card.shadowRoot.textContent,/192\.0\.2/);
  }finally{f.close();}
 });
+test('mutable HA instance identity clears old comparison even with the same connection and user',async()=>{
+ const f=fixture();try{
+  f.hass.config={instance_id:'synthetic-a'};f.card.hass=f.hass;await flush();
+  f.card.setActiveTab('comparison');await f.card._loadComparison();assert.ok(f.card._comparison.data);
+  f.hass.config.instance_id='synthetic-b';f.card.hass=f.hass;
+  assert.equal(f.card._comparison.data,null);assert.equal(f.card._comparison.history.length,0);
+  assert.doesNotMatch(f.card.shadowRoot.querySelector('#comparison').textContent,/192\.0\.2/);
+ }finally{f.close();}
+});
 test('source epoch, selection and disconnect reject stale outcome without retry',async()=>{
  const f=fixture();try{f.card.hass=f.hass;await flush();f.card.setActiveTab('comparison');await flush();
  let late;f.card._invalidateComparison();f.card._hass={...f.hass,callWS:c=>{f.calls.push(c);return new Promise(r=>late=r);}};

@@ -47,6 +47,21 @@ test('ordinary HA state updates read fresh canonical rows without reload or filt
     assert.ok(f.calls.every(c => !c.type.endsWith('/scan')));
   } finally { f.close(); }
 });
+test('mutable HA instance identity clears cached rows and rejects a late read from the old instance', async () => {
+  const f = fixture();
+  try {
+    f.hass.config = { instance_id: 'synthetic-a' };
+    f.card.hass = f.hass; await flush();
+    const pending = [];
+    f.hass.callWS = command => command.type === 'config/device_registry/list'
+      ? Promise.resolve([]) : new Promise(resolve => pending.push(resolve));
+    const oldRead = f.card._reloadFromApi();
+    f.hass.config.instance_id = 'synthetic-b'; f.card.hass = f.hass;
+    assert.equal(f.card.devices.length, 0);
+    pending[0]({ devices: [row('Stale instance')] }); await oldRead; await flush();
+    assert.ok(f.card.devices.every(device => device.name !== 'Stale instance'));
+  } finally { f.close(); }
+});
 
 test('registry events refresh rows; state bursts are throttled and preserve search, page and focus', async () => {
   const f = fixture();
