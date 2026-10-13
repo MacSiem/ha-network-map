@@ -616,6 +616,156 @@ function _bindFamilyNavigation(card, restoreFocus=null) {
   }
 }
 
+// W3: Data Exporter's container-local name/state and labelled record-fields pattern.
+// Unlike a CSS-only switch, move the original cells/actions so focus and handlers
+// survive a breakpoint. Neither observer nor disclosure reads or rebuilds data.
+function _rememberFamilyRecords(card) {
+  const root = card.shadowRoot, active = root?.activeElement;
+  card._familyRecordOpen ||= new Set();
+  root?.querySelectorAll('.ht-device-records > details').forEach(detail => {
+    if (detail.open) card._familyRecordOpen.add(detail.dataset.recordKey);
+    else card._familyRecordOpen.delete(detail.dataset.recordKey);
+  });
+  if (active?.dataset.recordSort) return { sort: active.dataset.recordSort };
+  const record = active?.closest('[data-record-key]');
+  return record ? { key: record.dataset.recordKey, id: active.id || null } : null;
+}
+function _disconnectFamilyRecords(card) {
+  card._familyRecordObserver?.disconnect();
+  card._familyRecordObserver = null;
+}
+function _focusFamilyRecord(card, key, id = null) {
+  const mount = card._familyRecordMount;
+  const item = mount?.items.find(item => item.key === key);
+  if (!item) return false;
+  const action = id && card.shadowRoot.getElementById(id);
+  if (mount.narrow) {
+    if (action && item.detail.contains(action)) {
+      item.detail.open = true; card._familyRecordOpen.add(key);
+      action.focus({ preventScroll: true });
+    } else item.summary.focus({ preventScroll: true });
+  } else {
+    const target = action || item.row.querySelector('button,a[href],input,select');
+    if (target) target.focus({ preventScroll: true });
+    else { item.row.tabIndex = -1; item.row.focus({ preventScroll: true }); }
+  }
+  return true;
+}
+function _bindFamilyRecords(card, restoreFocus = null) {
+  const root = card.shadowRoot, table = root?.querySelector('table[data-device-records]');
+  if (!table) { _disconnectFamilyRecords(card); card._familyRecordMount = null; return; }
+  let mount = card._familyRecordMount;
+  if (mount?.table !== table) {
+    _disconnectFamilyRecords(card);
+    card._familyRecordOpen ||= new Set();
+    const doc = card.ownerDocument, wide = table.parentElement;
+    const layout = doc.createElement('div'); layout.className = 'ht-device-layout';
+    const sorts = doc.createElement('div'); sorts.className = 'ht-record-sorts'; sorts.hidden = true;
+    sorts.setAttribute('role', 'group'); sorts.setAttribute('aria-label', card._lang === 'pl' ? 'Sortowanie urządzeń' : 'Device order');
+    const list = doc.createElement('div'); list.className = 'ht-device-records'; list.hidden = true;
+    wide.before(layout); layout.append(wide, sorts, list);
+    const headers = Array.from(table.tHead.rows[0].cells);
+    const sortItems = headers.flatMap((header, index) => Array.from(header.querySelectorAll('button'), button => {
+      button.dataset.recordSort = String(index);
+      // Sorting is still owned by the existing header handler in both tools.
+      button.addEventListener('click', () => { if (!header.contains(button)) header.click(); });
+      return { header, button, label: button.getAttribute('aria-label') };
+    }));
+    const items = Array.from(table.tBodies[0].rows, row => {
+      const key = row.dataset.recordKey;
+      const detail = doc.createElement('details'); detail.dataset.recordKey = key;
+      const summary = doc.createElement('summary');
+      const name = doc.createElement('strong'); name.textContent = row.dataset.recordName;
+      const state = doc.createElement('span'); state.textContent = row.dataset.recordState;
+      summary.append(name, state); detail.append(summary);
+      const fields = doc.createElement('dl'); fields.className = 'record-fields'; detail.append(fields);
+      const cells = Array.from(row.cells, (cell, index) => {
+        const label = doc.createElement('dt'); label.textContent = headers[index].textContent.trim();
+        const value = doc.createElement('dd'); fields.append(label, value);
+        return { cell, value, nodes: Array.from(cell.childNodes) };
+      });
+      // Network's existing row selection handler remains the sole action owner.
+      row.querySelectorAll('.device-detail-button').forEach(button => {
+        button.addEventListener('click', () => { if (!row.contains(button)) row.click(); });
+      });
+      detail.open = card._familyRecordOpen.has(key);
+      detail.addEventListener('toggle', () => {
+        if (!detail.isConnected) return;
+        if (detail.open) card._familyRecordOpen.add(key); else card._familyRecordOpen.delete(key);
+      });
+      list.append(detail);
+      return { key, row, detail, summary, cells };
+    });
+    mount = { table, layout, wide, sorts, list, sortItems, items, narrow: false };
+    card._familyRecordMount = mount;
+  }
+  const applyWidth = width => {
+    if (!Number.isFinite(width) || width <= 0) return;
+    const narrow = width < 500;
+    if (mount.narrow === narrow) return;
+    const active = root.activeElement;
+    const focusedItem = mount.items.find(item => item.row.contains(active) || item.detail.contains(active));
+    const wasSummary = focusedItem?.summary === active || focusedItem?.row === active;
+    // Reveal the destination before moving any focused node into it.
+    if (narrow) { mount.list.hidden = false; mount.sorts.hidden = false; }
+    else mount.wide.hidden = false;
+    mount.sortItems.forEach(({ header, button, label }) => {
+      (narrow ? mount.sorts : header).append(button);
+      const order = header.getAttribute('aria-sort');
+      if (narrow && ['ascending', 'descending'].includes(order)) {
+        const spokenOrder = card._lang === 'pl' ? (order === 'ascending' ? 'rosnąco' : 'malejąco') : order;
+        button.setAttribute('aria-label', (label || button.textContent.trim()) + ': ' + spokenOrder);
+      } else if (label === null) button.removeAttribute('aria-label');
+      else button.setAttribute('aria-label', label);
+    });
+    mount.items.forEach(item => item.cells.forEach(({ cell, value, nodes }) => (narrow ? value : cell).append(...nodes)));
+    mount.narrow = narrow;
+    if (focusedItem) {
+      if (wasSummary) _focusFamilyRecord(card, focusedItem.key);
+      else if (active) {
+        if (narrow) { focusedItem.detail.open = true; card._familyRecordOpen.add(focusedItem.key); }
+        active.focus({ preventScroll: true });
+      }
+    } else if (mount.sortItems.some(item => item.button === active)) active.focus({ preventScroll: true });
+    mount.wide.hidden = narrow; mount.list.hidden = !narrow; mount.sorts.hidden = !narrow;
+  };
+  if (!card._familyRecordObserver && typeof ResizeObserver === 'function' && card.isConnected) {
+    const style = getComputedStyle(mount.layout);
+    const measured = mount.layout.getBoundingClientRect().width - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0) - (parseFloat(style.borderLeftWidth) || 0) - (parseFloat(style.borderRightWidth) || 0);
+    if (measured > 0) card._familyRecordWidth = measured;
+    const observer = new ResizeObserver(entries => {
+      if (!card.isConnected || card._familyRecordObserver !== observer || card._familyRecordMount !== mount) return;
+      const entry = entries.find(item => item.target === mount.layout);
+      if (!entry) return;
+      card._familyRecordWidth = entry.contentRect.width;
+      applyWidth(card._familyRecordWidth);
+    });
+    card._familyRecordObserver = observer; observer.observe(mount.layout);
+  }
+  applyWidth(typeof ResizeObserver === 'function' ? card._familyRecordWidth || 900 : 900);
+  if (restoreFocus?.sort) mount.sortItems.find(item => item.button.dataset.recordSort === restoreFocus.sort)?.button.focus({ preventScroll: true });
+  else if (restoreFocus?.key && !_focusFamilyRecord(card, restoreFocus.key, restoreFocus.id)) {
+    root.querySelector('#sI,.search-box')?.focus({ preventScroll: true });
+  }
+}
+
+const _FAMILY_RECORD_CSS = `
+/* Container content width controls only presentation. Wide table cells stay intact. */
+.ht-device-layout {min-width:0;max-width:100%;}
+.ht-device-layout [hidden] {display:none !important;}
+.ht-record-sorts {display:flex;flex-wrap:wrap;gap:8px;margin-block:8px;}
+.ht-record-sorts button {white-space:normal;overflow-wrap:anywhere;padding:8px !important;}
+.ht-device-records > details {min-width:0;padding:8px 0;border-bottom:1px solid var(--bento-border);}
+.ht-device-records summary {cursor:pointer;min-height:44px;padding:8px;overflow-wrap:anywhere;white-space:normal;}
+.ht-device-records summary strong,.ht-device-records summary > span {display:block;min-width:0;overflow-wrap:anywhere;}
+.ht-device-records summary > span {margin-top:4px;}
+.ht-device-records .record-fields {display:grid;grid-template-columns:minmax(0,1fr);gap:4px;margin:8px;}
+.ht-device-records dt {font-size:12px;color:var(--bento-text-secondary);margin-top:8px;}
+.ht-device-records dd {margin:0;min-width:0;white-space:normal;overflow-wrap:anywhere;}
+.ht-device-records .device-detail-button {white-space:normal;text-align:start;max-width:100%;}
+.ht-device-records .dn {white-space:normal;overflow-wrap:anywhere;}
+`;
+
 const _FAMILY_CONTROL_CSS = `
 /* Family15: native touch targets; checkbox indicators remain small inside labels. */
 :host button,:host summary,:host a[href],:host [role=button],
@@ -1090,6 +1240,7 @@ class HaNetworkMap extends HTMLElement {
   connectedCallback() {
     this._disconnected = false;
     _bindFamilyNavigation(this);
+    _bindFamilyRecords(this);
     this._bindComparisonConnection();
     window.addEventListener('offline', this._comparisonConnectivity);
     window.addEventListener('online', this._comparisonConnectivity);
@@ -1101,6 +1252,8 @@ class HaNetworkMap extends HTMLElement {
 
   disconnectedCallback() {
     _disconnectFamilyNavigation(this);
+    _disconnectFamilyRecords(this);
+    this._familyRecordWidth = null;
     this._familyNavWidth = null;
     this._disconnected = true;
     this._unbindComparisonConnection();
@@ -1572,6 +1725,7 @@ class HaNetworkMap extends HTMLElement {
   _doRender() {
     if (!this._hass) return;
     const familyFocus = _rememberFamilyFocus(this);
+    const recordFocus = _rememberFamilyRecords(this);
     const css = this._css();
     let content = '';
 
@@ -1608,7 +1762,7 @@ class HaNetworkMap extends HTMLElement {
     const support = this._hass?.user?.is_admin && this.config?.show_support !== false && !supportDismissed() ? ownDonateFooter() : '';
     this._renderedLang = this._lang;
     this._renderedCanScan = this._canScan();
-    if (this._lastHtml === html + support) { _bindFamilyNavigation(this); return; }
+    if (this._lastHtml === html + support) { _bindFamilyNavigation(this); _bindFamilyRecords(this); return; }
     // Preserve focus + caret across the full innerHTML rebuild so typing in an
     // input (search / subnet / config) survives data-driven re-renders instead
     // of dropping a character per refresh.
@@ -1624,6 +1778,7 @@ class HaNetworkMap extends HTMLElement {
       if (_el) { try { _el.focus({ preventScroll: true }); if (_ss != null && _el.setSelectionRange) _el.setSelectionRange(_ss, _se, _sd || 'none'); } catch (e) {} }
     }
     _bindFamilyNavigation(this, familyFocus);
+    _bindFamilyRecords(this, recordFocus);
   }
 
   _renderScanOverlay() {
@@ -1679,7 +1834,7 @@ class HaNetworkMap extends HTMLElement {
     let rows = '';
     items.forEach((d, i) => {
       const dot = d.reachable === true ? '<span style="color:#10B981">\u25CF</span>' : d.reachable === false ? '<span style="color:#EF4444">\u25CF</span>' : '<span style="color:#94A3B8">\u2014</span>';
-      rows += '<tr data-i="' + i + '"><td><button type="button" class="device-detail-button" id="device-detail-' + _esc(d.preferenceId) + '"><span class="di" aria-hidden="true">' + _esc(d.icon) + '</span><span class="dn">' + _esc(d.name) + '</span></button></td>' +
+      rows += '<tr data-record-key="' + _esc(d.preferenceId) + '" data-record-name="' + _esc(d.name) + '" data-record-state="' + _esc(d.reachable == null ? this._t('unknownStatus') : d.reachable ? this._t('reachableStatus') : this._t('unreachableStatus')) + '" data-i="' + i + '"><td><button type="button" class="device-detail-button" id="device-detail-' + _esc(d.preferenceId) + '"><span class="di" aria-hidden="true">' + _esc(d.icon) + '</span><span class="dn">' + _esc(d.name) + '</span></button></td>' +
         '<td>' + _esc(this._categoryLabel(d.category)) + '</td>' +
         '<td class="mn">' + _esc(d.ip || '—') + '</td>' +
         '<td class="mn">' + _esc(d.mac || '—') + '</td>' +
@@ -1689,7 +1844,7 @@ class HaNetworkMap extends HTMLElement {
         '</tr>';
     });
 
-    h += '<div class="tw"><table><thead><tr>' +
+    h += '<div class="tw"><table data-device-records><thead><tr>' +
       '<th data-s="name" aria-sort="' + (this.sortBy === 'name' ? (this.sortDesc ? 'descending' : 'ascending') : 'none') + '"><button type="button" id="sort-name" style="font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:inherit">' + this._t('deviceName') + sa('name') + '</button></th>' +
       '<th data-s="category" aria-sort="' + (this.sortBy === 'category' ? (this.sortDesc ? 'descending' : 'ascending') : 'none') + '"><button type="button" id="sort-category" style="font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:inherit">' + this._t('category') + sa('category') + '</button></th>' +
       '<th data-s="ip" aria-sort="' + (this.sortBy === 'ip' ? (this.sortDesc ? 'descending' : 'ascending') : 'none') + '"><button type="button" id="sort-ip" style="font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:inherit">' + this._t('ipAddress') + sa('ip') + '</button></th>' +
@@ -2182,7 +2337,7 @@ class HaNetworkMap extends HTMLElement {
         const index = this.filteredDevices.findIndex(d => d.preferenceId === preferenceId);
         const pageStart = (this._currentPage - 1) * this._pageSize;
         if (index >= pageStart && index < pageStart + this._pageSize) {
-          this.shadowRoot.querySelector('tr[data-i="' + (index - pageStart) + '"] .device-detail-button')?.focus();
+          _focusFamilyRecord(this, preferenceId, 'device-detail-' + preferenceId);
         } else {
           this.shadowRoot.querySelector('#sI')?.focus();
         }
@@ -2436,7 +2591,7 @@ class HaNetworkMap extends HTMLElement {
     '  .toolbar { flex-direction: column; }' +
     '  .si { min-width: 0; }' +
     '}' +
-    _FAMILY_CONTROL_CSS + '</style>';
+    _FAMILY_CONTROL_CSS + _FAMILY_RECORD_CSS + '</style>';
   }
 
   getCardSize() { return 8; }
