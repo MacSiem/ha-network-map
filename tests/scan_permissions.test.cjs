@@ -122,12 +122,13 @@ for (const language of ['en', 'pl']) {
 test('a pending device read does not present the scan as success', async () => {
   const { dom, card } = fixture(true);
   try {
-    let finishRead;
+    let finishRead, markReadStarted;
+    const readStarted = new Promise(resolve => { markReadStarted = resolve; });
     card._hass.callWS = async request => request.type.endsWith('/scan')
       ? { queued: false, last_scan_started_at: 100, last_scan_finished_at: 101, device_count: 1, with_ip: 1, reachable: 0 }
-      : new Promise(resolve => { finishRead = resolve; });
+      : new Promise(resolve => { finishRead = resolve; markReadStarted(); });
     const pending = card._scanAllSubnets();
-    await Promise.resolve(); await Promise.resolve();
+    await readStarted;
     card._doRender();
     assert.equal(card.shadowRoot.querySelector('#scanActionResult [data-result-state]').dataset.resultState, 'not_checked');
     finishRead({ devices: card._integrationDevices }); await pending;
