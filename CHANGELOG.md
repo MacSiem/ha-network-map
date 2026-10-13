@@ -2,6 +2,8 @@
 
 ## 5.1.0 (2026-10-13)
 
+- Exclude addressless HA service records from scan coverage so complete network scans can confirm new and missing devices; real devices without IPs still report partial coverage.
+
 - Compare two saved, completed TCP scans by stable device identity, with new devices, devices absent from a scan and IP changes. Show actual source, times, scope, method and coverage; absence from a scan does not mean offline.
 - Keep bounded scan history in Home Assistant across restarts, with admin-only history and comparison reads. Opening comparison never starts a probe.
 - Show explicit scan outcomes for completed, empty, busy, malformed, denied and partial results, with safe error guidance in English and Polish.

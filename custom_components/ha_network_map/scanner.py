@@ -224,7 +224,15 @@ class NetworkScanner:
 
             # Freeze actual run inputs: read-only refresh may replace _devices
             # while probes await. Capture never serializes that later live map.
-            frozen = {key: deepcopy(dev.to_dict()) for key,dev in self._devices.items()}
+            # Addressless integration/service records are outside the network
+            # map. Counting them as missed targets makes every ordinary HA
+            # install partial and suppresses confirmed additions/removals.
+            # Keep real connected devices without IPs in the coverage evidence.
+            frozen = {
+                key: deepcopy(dev.to_dict())
+                for key, dev in self._devices.items()
+                if dev.ip or dev.mac or dev.kind != "service"
+            }
             for key in self._ambiguous_keys:
                 if key in frozen:
                     # Existing discovery merges shared keys. Its overwritten
