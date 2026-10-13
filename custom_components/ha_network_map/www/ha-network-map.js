@@ -1589,6 +1589,16 @@ class HaNetworkMap extends HTMLElement {
     return text[reason]?.[this._lang === 'pl' ? 1 : 0] || reason;
   }
 
+  _comparisonDate(value) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return String(value || '—');
+    return new Intl.DateTimeFormat(this._lang === 'pl' ? 'pl-PL' : 'en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit',
+      minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3,
+      hourCycle: 'h23', timeZone: 'UTC'
+    }).format(date) + ' UTC';
+  }
+
   _comparisonMeta(snapshot, title) {
     if (!snapshot) return '';
     const pl = this._lang === 'pl';
@@ -1603,13 +1613,13 @@ class HaNetworkMap extends HTMLElement {
     const c = this._comparison, data = c.data;
     const ui = createUiV3({language:this._lang});
     const labels = {new:'comparisonNew',not_in_scan:'comparisonMissing',ip_changed:'comparisonIp',unchanged:'comparisonSame',unknown:'comparisonUnknownRow'};
-    const option = s => `<option value="${_esc(s.id)}">${_esc(s.finished_at)} UTC · ${_esc(this._t(s.coverage === 'full' ? 'comparisonFull' : 'comparisonPartial'))}</option>`;
+    const option = s => `<option value="${_esc(s.id)}">${_esc(this._comparisonDate(s.finished_at))} · ${_esc(this._t(s.coverage === 'full' ? 'comparisonFull' : 'comparisonPartial'))}</option>`;
     const select = (id,title,value) => `<label for="${id}">${_esc(title)}<select id="${id}"><option value="">${_esc(title)}</option>${c.history.map(option).join('')}</select></label>`;
     let h = `<section id="comparison" aria-labelledby="comparison-title"><h2 id="comparison-title">${_esc(this._t('comparisonTab'))}</h2><div class="comparison-controls"><button id="comparison-read" ${c.state === 'loading' || this._comparisonWire ? 'disabled' : ''}>${_esc(this._t(c.state === 'loading' ? 'comparisonLoading' : 'comparisonRead'))}</button>${c.history.length ? select('comparison-before',this._t('comparisonBefore'),c.before) + select('comparison-after',this._t('comparisonAfter'),c.after) : ''}</div><div aria-live="polite">${ui.statusHtml(c.state === 'loading' ? 'not_checked' : c.state)}${c.error ? '<p>' + _esc(this._comparisonReason(c.error)) + '</p>' : ''}</div><p>${_esc(this._t('comparisonAbsence'))}</p>`;
     if (c.historyStatus) h += `<p>${_esc(this._t('comparisonStatus'))}: ${_esc({ready:this._lang === 'pl' ? 'Gotowa' : 'Ready',empty:this._lang === 'pl' ? 'Pusta' : 'Empty',migrated:this._lang === 'pl' ? 'Odczyt po migracji w pamięci' : 'Read after in-memory migration',unavailable:this._comparisonReason('history_unavailable'),save_failed:this._lang === 'pl' ? 'Ostatni zapis nieudany' : 'Last save failed'}[c.historyStatus] || c.historyStatus)}</p>`;
     if (!data) return h + `<p>${_esc(this._t('comparisonNoData'))}</p></section>`;
-    h += `<div class="comparison-metadata">${this._comparisonMeta(data.before,this._t('comparisonBefore'))}${this._comparisonMeta(data.after,this._t('comparisonAfter'))}</div><p>${_esc(this._t('comparisonReasons'))}: ${_esc(data.reasons.map(r => this._comparisonReason(r)).join('; ') || '—')}</p>`;
-    h += `<div class="comparison-counts">${Object.entries(data.counts).map(([key,count]) => `<span>${_esc(this._t(labels[key] || key))}: ${_esc(data.comparable === true ? count : '—')}</span>`).join('')}</div>`;
+    if (data.reasons.length) h += `<p>${_esc(this._t('comparisonReasons'))}: ${_esc(data.reasons.map(r => this._comparisonReason(r)).join('; '))}</p>`;
+    h += `<div class="comparison-counts">${Object.entries(data.counts).map(([key,count]) => `<span><strong>${_esc(data.comparable === true ? count : '—')}</strong>${_esc(this._t(labels[key] || key))}</span>`).join('')}</div>`;
     const pageCount = Math.max(1,Math.ceil(data.changes.length/20));
     c.page = Math.max(1,Math.min(c.page,pageCount));
     const rows = data.changes.slice((c.page-1)*20,c.page*20);
@@ -1618,11 +1628,14 @@ class HaNetworkMap extends HTMLElement {
       const row = data.changes[c.detail];
       h += `<section id="comparison-detail" aria-labelledby="comparison-detail-title"><h3 id="comparison-detail-title">${_esc(this._t('comparisonDetails'))}</h3><p>${_esc(this._t('comparisonIdentity'))}: ${_esc(row.stable_id || this._t('comparisonUnknownRow'))}</p><p>${_esc(this._t('comparisonOldIp'))}: ${_esc(row.before?.ip || '—')} → ${_esc(this._t('comparisonNewIp'))}: ${_esc(row.after?.ip || '—')}</p><p>${_esc(this._t('comparisonTCP'))}: ${_esc(row.before ? String(row.before.reachable) + ' / ' + row.before.open_ports.join(', ') : '—')} → ${_esc(row.after ? String(row.after.reachable) + ' / ' + row.after.open_ports.join(', ') : '—')}</p><button id="comparison-close">${_esc(this._t('close'))}</button></section>`;
     }
+    h += `<details id="comparison-evidence" ${c.evidenceOpen ? 'open' : ''}><summary>${_esc(this._lang === 'pl' ? 'Szczegóły pomiarów i zakresu' : 'Measurement and scope details')}</summary><div class="comparison-metadata">${this._comparisonMeta(data.before,this._t('comparisonBefore'))}${this._comparisonMeta(data.after,this._t('comparisonAfter'))}</div></details>`;
     return h + '</section>';
   }
 
   _bindComparisonEvents() {
     const c = this._comparison;
+    const evidence = this.shadowRoot.querySelector('#comparison-evidence');
+    evidence?.addEventListener('toggle', () => { c.evidenceOpen = evidence.open; });
     this.shadowRoot.querySelector('#comparison-read')?.addEventListener('click', () => {
       this._invalidateComparison(); this._loadComparison();
     });
@@ -2527,7 +2540,14 @@ class HaNetworkMap extends HTMLElement {
 .comparison-meta dl>div {display:flex;flex-wrap:wrap;gap:8px;border-top:1px solid var(--bento-border);padding:6px 0;}
 .comparison-meta dt {flex:1 1 120px;color:var(--bento-text-secondary);}
 .comparison-meta dd {flex:2 1 160px;margin:0;}
-.comparison-counts {display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;}
+.comparison-counts {display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin:16px 0;}
+.comparison-counts>span {display:flex;flex-direction:column;gap:5px;padding:12px;border:1px solid var(--divider-color,#ccc);border-radius:10px;font-size:12px;}
+.comparison-counts strong {font-size:24px;line-height:1.2;font-variant-numeric:tabular-nums;color:var(--primary-text-color);}
+#comparison-evidence {margin-top:18px;border-top:1px solid var(--divider-color,#ccc);}
+#comparison-evidence summary {cursor:pointer;padding:16px 0;font-weight:600;}
+#comparison-evidence summary:focus-visible {outline:2px solid var(--primary-color);outline-offset:2px;}
+#comparison .comparison-controls label {flex:1 1 260px;min-width:0;}
+#comparison .comparison-controls select {width:100%;min-width:0;}
 .comparison-records {list-style:none;margin:0;padding:0;}
 .comparison-records li {margin:4px 0;}
 .comparison-records button {width:100%;display:flex;flex-wrap:wrap;gap:8px;text-align:left;align-items:center;}
