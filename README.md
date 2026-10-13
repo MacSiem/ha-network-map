@@ -62,6 +62,19 @@ HA device and entity pages. These choices are stored in this browser's
 
 ## Screenshots
 
+### Saved scan comparison in 5.1.0
+
+| English · light | Polski · dark |
+|---|---|
+| ![Saved scan comparison: new device, absence and an IP change, English light theme](docs/screenshots/scan-comparison-en-light-5.1.0.png) | ![Porównanie zapisanych skanów: nowe urządzenie, brak w skanie i zmiana IP, polski ciemny motyw](docs/screenshots/scan-comparison-pl-dark-5.1.0.png) |
+
+*Captured in real Home Assistant 2025.2.0 and 2026.10.1 using synthetic
+loopback devices. The saved measurements survive a restart. Counts and changes
+come first; expand **Measurement and scope details** for the exact timestamps,
+method, scope and coverage. No household network is shown.*
+
+### Device map in 5.0.20
+
 | Light | Dark |
 |---|---|
 | ![Devices tab in English, administrator panel in light theme](docs/screenshots/card-map-light-5.0.20.jpg) | ![Devices tab in Polish, household Sections card in dark theme](docs/screenshots/card-map-dark-5.0.20.jpg) |
@@ -180,11 +193,14 @@ an informational check, not a security assessment or a guarantee of availability
 ## Saved scan comparison
 
 Administrators can open **Scan comparison** and select two completed scans.
-The view shows each scan’s UTC times, source, TCP method, configured scope,
+The view starts with counts and device changes. Expand **Measurement and scope
+details** for each scan’s exact UTC times, source, TCP method, configured scope,
 limits and coverage. Devices with a stable registry ID or MAC can be compared
 across IP changes. **Not in this scan** means the device was absent from that
 measurement; it is not a claim of downtime. Incompatible methods or scopes,
-missing identity and capped coverage remain partial or unconfirmed.
+missing identity and capped coverage remain partial or unconfirmed. Addressless
+HA service entries are outside the network scope; real devices without an IP
+remain visible as skipped coverage.
 
 Completed scans are retained locally in Home Assistant: up to 30 scans from
 30 days, with at most 256 measured devices per scan. The private store contains
