@@ -971,8 +971,6 @@ class HaNetworkMap extends HTMLElement {
     const previousStates = this._hass?.states;
     const session = this._readSession(hass);
     const sessionChanged = this._dataSession && !this._sameReadSession(this._dataSession, session);
-    const registryChanged = this._dataSession && (this._dataSession.connection !== session.connection
-      || this._dataSession.userId !== session.userId || this._dataSession.instanceId !== session.instanceId);
     this._hass = hass;
     this._bindComparisonConnection();
     this._comparisonLastContext = this._comparisonContext();
@@ -997,7 +995,6 @@ class HaNetworkMap extends HTMLElement {
       this.selectedDevice = null;
       this._buildDeviceList();
       this._doRender();
-      if (registryChanged) this._loadDeviceRegistry();
     }
     this._subscribeRegistryUpdates();
 
