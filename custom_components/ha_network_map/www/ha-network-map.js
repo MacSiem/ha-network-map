@@ -2465,7 +2465,9 @@ class HaNetworkMapEditor extends HTMLElement {
   }
 
   set hass(hass) {
+    const languageChanged = this._hass?.language !== hass?.language;
     this._hass = hass;
+    if (languageChanged || !this.shadowRoot.firstElementChild) this._render();
   }
 
   _dispatch() {
