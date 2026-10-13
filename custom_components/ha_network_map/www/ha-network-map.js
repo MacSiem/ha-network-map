@@ -543,6 +543,111 @@ pre {
 `;
 /* ============================================================ */
 
+const FAMILY_NAV='.tabs',FAMILY_ATTR='data-tab',FAMILY_ACTIVE='active';
+
+// Adapted from Config/YAML family15: options come only from current native buttons.
+// Observe the actual navigation parent's content box, not the global viewport.
+function _rememberFamilyFocus(card) {
+  const active = card.shadowRoot?.activeElement;
+  const nav = card.shadowRoot?.querySelector(FAMILY_NAV);
+  if (active?.id === 'ha-tools-tab-picker') return { picker:true };
+  if (nav?.contains(active)) return { tab:active.getAttribute(FAMILY_ATTR) };
+  return null;
+}
+function _disconnectFamilyNavigation(card) {
+  card._familyNavObserver?.disconnect();card._familyNavObserver=null;card._familyNavTarget=null;
+}
+function _bindFamilyNavigation(card, restoreFocus=null) {
+  const root=card.shadowRoot, nav=root?.querySelector(FAMILY_NAV);
+  if (!nav) { _disconnectFamilyNavigation(card);return; }
+  let label=root.querySelector('.ht-tab-picker');
+  if (!label) {
+    label=card.ownerDocument.createElement('div');label.className='ht-tab-picker';
+    const text=card.ownerDocument.createElement('label');text.htmlFor='ha-tools-tab-picker';label.append(text);
+    const select=card.ownerDocument.createElement('select');select.id='ha-tools-tab-picker';label.append(select);nav.before(label);
+    select.addEventListener('change',()=>{
+      const button=Array.from(root.querySelectorAll(FAMILY_NAV+' button['+FAMILY_ATTR+']')).find(item=>item.getAttribute(FAMILY_ATTR)===select.value&&!item.disabled&&!item.hidden);
+      if(button)button.click(); // The original handler owns navigation, history and guards.
+      _bindFamilyNavigation(card);
+    });
+  }
+  label.firstElementChild.textContent=card._lang==='pl'?'Zakładka':'Tab';
+  const select=label.querySelector('select');
+  const buttons=Array.from(nav.querySelectorAll('button['+FAMILY_ATTR+']')).filter(button=>!button.hidden&&!button.disabled);
+  const options=Array.from(select.options);
+  if(options.length!==buttons.length||buttons.some((button,index)=>options[index]?.value!==button.getAttribute(FAMILY_ATTR))) {
+    select.replaceChildren(...buttons.map(button=>{const option=card.ownerDocument.createElement('option');option.value=button.getAttribute(FAMILY_ATTR);return option;}));
+  }
+  buttons.forEach((button,index)=>{select.options[index].textContent=button.getAttribute('aria-label')||button.textContent.trim();});
+  const selected=buttons.find(button=>button.classList.contains(FAMILY_ACTIVE));select.value=selected?.getAttribute(FAMILY_ATTR)||'';
+  const target=nav.parentElement;
+  const applyWidth=width=>{
+    const currentNav=root.querySelector(FAMILY_NAV),currentLabel=root.querySelector('.ht-tab-picker');if(!currentNav||!currentLabel)return;
+    const input=currentLabel.querySelector('select'),active=root.activeElement;
+    const style=getComputedStyle(currentNav);
+    const available=width-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0)-(parseFloat(style.borderLeftWidth)||0)-(parseFloat(style.borderRightWidth)||0);
+    const narrow=available>0&&available<280,fromTab=currentNav.contains(active),fromPicker=active===input;
+    currentNav.hidden=narrow;currentLabel.hidden=!narrow;
+    if(narrow&&fromTab)input.focus({preventScroll:true});
+    else if(!narrow&&fromPicker)currentNav.querySelector('button.'+FAMILY_ACTIVE)?.focus({preventScroll:true});
+  };
+  if(card._familyNavTarget!==target) {
+    _disconnectFamilyNavigation(card);
+    const style=getComputedStyle(target);
+    const measured=target.getBoundingClientRect().width-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0)-(parseFloat(style.borderLeftWidth)||0)-(parseFloat(style.borderRightWidth)||0);
+    if(measured>0)card._familyNavWidth=measured;
+    if(typeof ResizeObserver==='function'&&card.isConnected) {
+      card._familyNavTarget=target;
+      const observer=new ResizeObserver(entries=>{
+        if(!card.isConnected||card._familyNavObserver!==observer||card._familyNavTarget!==target)return;
+        const entry=entries.find(item=>item.target===target);if(!entry)return;
+        card._familyNavWidth=entry.contentRect.width;applyWidth(card._familyNavWidth);
+      });
+      card._familyNavObserver=observer;
+      observer.observe(target);
+    }
+  }
+  // Without ResizeObserver neither control is hidden, so do not transfer its focus.
+  if(typeof ResizeObserver!=='function') { nav.hidden=false;label.hidden=false; }
+  else applyWidth(card._familyNavWidth||900);
+  if(restoreFocus) {
+    const button=buttons.find(item=>item.getAttribute(FAMILY_ATTR)===restoreFocus.tab)||selected;
+    if(nav.hidden||(restoreFocus.picker&&!label.hidden))select.focus({preventScroll:true});else button?.focus({preventScroll:true});
+  }
+}
+
+const _FAMILY_CONTROL_CSS = `
+/* Family15: native touch targets; checkbox indicators remain small inside labels. */
+:host button,:host summary,:host a[href],:host [role=button],
+:host input:not([type=checkbox]):not([type=radio]),:host select,:host textarea {
+  box-sizing:border-box;min-height:44px !important;min-width:44px !important;max-width:100%;flex-shrink:0;
+}
+:host button,:host summary,:host a[href] { white-space:normal !important;overflow-wrap:anywhere; }
+:host a[href] { display:inline-flex;align-items:center; }
+:host label:has(input[type=checkbox]) { min-height:44px !important;min-width:44px;display:flex;align-items:center;gap:8px;cursor:pointer; }
+:host input[type=checkbox] { width:18px !important;height:18px !important;min-width:18px !important;min-height:18px !important;flex:none; }
+:host button:focus-visible,:host summary:focus-visible,:host a:focus-visible,:host input:focus-visible,:host select:focus-visible,:host textarea:focus-visible,:host [role=button]:focus-visible {
+  outline:3px solid var(--primary-color,#1769aa) !important;outline-offset:2px;
+}
+.intro-banner { padding-right:64px !important; }
+.ht-tab-picker { min-width:0;display:flex;flex-direction:column;gap:6px;padding:8px;margin:0 0 8px; }
+.ht-tab-picker select { width:100%;font:inherit;color:var(--primary-text-color,inherit);background:var(--card-background-color,transparent);padding:8px;border:1px solid var(--divider-color,#aaa);border-radius:8px; }
+.ht-tab-picker[hidden],.tabs[hidden],.det-tabs[hidden] { display:none !important; }
+.tabs,.det-tabs { display:flex;box-sizing:border-box;flex-wrap:wrap !important;overflow:visible !important;min-width:0;max-width:100%; }
+:host .tabs button,:host .det-tabs button { min-height:44px !important;min-width:44px !important;white-space:normal !important;overflow-wrap:anywhere;flex:1 1 auto; }
+`;
+
+// Values remain owned by the existing input/config handlers; retain only focus/caret.
+function _rememberFamilyEditorFocus(editor) {
+  const field=editor.shadowRoot.activeElement;
+  return field?.id ? {id:field.id,start:field.selectionStart,end:field.selectionEnd,direction:field.selectionDirection} : null;
+}
+function _restoreFamilyEditorFocus(editor, saved) {
+  const field=saved&&editor.shadowRoot.getElementById(saved.id);if(!field||field.disabled)return;
+  field.focus({preventScroll:true});
+  if(typeof saved.start==='number'&&typeof field.setSelectionRange==='function')field.setSelectionRange(saved.start,saved.end,saved.direction||'none');
+}
+
 class HaNetworkMap extends HTMLElement {
   constructor() {
     super();
@@ -984,6 +1089,7 @@ class HaNetworkMap extends HTMLElement {
 
   connectedCallback() {
     this._disconnected = false;
+    _bindFamilyNavigation(this);
     this._bindComparisonConnection();
     window.addEventListener('offline', this._comparisonConnectivity);
     window.addEventListener('online', this._comparisonConnectivity);
@@ -994,6 +1100,8 @@ class HaNetworkMap extends HTMLElement {
   }
 
   disconnectedCallback() {
+    _disconnectFamilyNavigation(this);
+    this._familyNavWidth = null;
     this._disconnected = true;
     this._unbindComparisonConnection();
     window.removeEventListener('offline', this._comparisonConnectivity);
@@ -1463,6 +1571,7 @@ class HaNetworkMap extends HTMLElement {
 
   _doRender() {
     if (!this._hass) return;
+    const familyFocus = _rememberFamilyFocus(this);
     const css = this._css();
     let content = '';
 
@@ -1499,7 +1608,7 @@ class HaNetworkMap extends HTMLElement {
     const support = this._hass?.user?.is_admin && this.config?.show_support !== false && !supportDismissed() ? ownDonateFooter() : '';
     this._renderedLang = this._lang;
     this._renderedCanScan = this._canScan();
-    if (this._lastHtml === html + support) return;
+    if (this._lastHtml === html + support) { _bindFamilyNavigation(this); return; }
     // Preserve focus + caret across the full innerHTML rebuild so typing in an
     // input (search / subnet / config) survives data-driven re-renders instead
     // of dropping a character per refresh.
@@ -1514,6 +1623,7 @@ class HaNetworkMap extends HTMLElement {
       const _el = this.shadowRoot.getElementById(_fid) || ((_fid.startsWith('device-detail-') || _fid.startsWith('topology-device-')) ? this.shadowRoot.getElementById('sI') || this.shadowRoot.getElementById('tab-' + this.activeTab) : null);
       if (_el) { try { _el.focus({ preventScroll: true }); if (_ss != null && _el.setSelectionRange) _el.setSelectionRange(_ss, _se, _sd || 'none'); } catch (e) {} }
     }
+    _bindFamilyNavigation(this, familyFocus);
   }
 
   _renderScanOverlay() {
@@ -1554,8 +1664,8 @@ class HaNetworkMap extends HTMLElement {
     }
 
     const catOpts = cats.map(c => '<option value="' + _esc(c) + '"' + (this._catFilter === c ? ' selected' : '') + '>' + _esc(this._categoryLabel(c)) + '</option>').join('');
-    h += '<div class="toolbar"><input type="text" class="si" id="sI" placeholder="' + this._t('searchPlaceholder') + '" value="' + _esc(this.searchQuery || '') + '">' +
-      '<select class="fs" id="cF"><option value="all">' + this._t('allCategories') + '</option>' + catOpts + '</select>' +
+    h += '<div class="toolbar"><input type="text" class="si" id="sI" aria-label="' + _esc(this._t('searchPlaceholder')) + '" placeholder="' + this._t('searchPlaceholder') + '" value="' + _esc(this.searchQuery || '') + '">' +
+      '<select class="fs" id="cF" aria-label="' + _esc(this._t('category')) + '"><option value="all">' + this._t('allCategories') + '</option>' + catOpts + '</select>' +
       '<label><input id="showOther" type="checkbox"' + (this._includeNonNetwork ? ' checked' : '') + '> ' + this._t('showOtherDevices') + '</label>' +
       '<label><input id="showHidden" type="checkbox"' + (this._showHidden ? ' checked' : '') + '> ' + this._t('showHidden') + '</label></div>';
 
@@ -1864,7 +1974,7 @@ class HaNetworkMap extends HTMLElement {
         const isDefault = subnet === this._detectDefaultSubnet();
         h += '<div class="tree-item"><span class="tree-item-name">' + subnet + '.0/24</span>' +
           (isDefault ? '<span style="font-size:10px;color:var(--bento-text-muted)">(' + this._t('defaultSubnet') + ')</span>' : '') +
-          '<button class="rb" style="float:right;font-size:11px" data-remove-subnet="' + subnet + '">✕</button>' +
+          '<button class="rb" style="float:right;font-size:11px" aria-label="' + (this._lang === 'pl' ? 'Usuń podsieć' : 'Remove subnet') + '" data-remove-subnet="' + subnet + '">✕</button>' +
           '</div>';
       });
     }
@@ -1872,7 +1982,7 @@ class HaNetworkMap extends HTMLElement {
     h += '</div></div>';
 
     h += '<div style="margin-top:16px"><div style="display:flex;gap:8px">' +
-      '<input type="text" class="si" id="subnetInput" placeholder="' + this._t('addSubnetLabel') + '" style="flex:1">' +
+      '<input type="text" class="si" id="subnetInput" aria-label="' + _esc(this._t('addSubnetLabel')) + '" placeholder="' + this._t('addSubnetLabel') + '" style="flex:1">' +
       '<button class="rb" id="addSubnetBtn">' + (this._lang === 'pl' ? 'Dodaj' : 'Add') + '</button>' +
       '<button class="rb" id="rescanSubnetBtn"' + (!this._canScan() || this._scanInProgress ? ' disabled' : '') + '>🔄 ' + this._t('rescanAll') + '</button>' +
       '</div></div>';
@@ -1893,8 +2003,8 @@ class HaNetworkMap extends HTMLElement {
       this._suggestedBindings.forEach(sug => {
         h += '<div class="tree-item" style="gap:4px">' +
           '<span class="tree-item-name">' + _esc(sug.deviceName) + ' → ' + _esc(sug.entityName) + '</span>' +
-          '<button class="rb" style="font-size:11px" data-accept-suggestion="' + _esc(sug.key) + '">✓</button>' +
-          '<button class="rb" style="font-size:11px" data-reject-suggestion="' + _esc(sug.key) + '">✕</button>' +
+          '<button class="rb" style="font-size:11px" aria-label="' + (this._lang === 'pl' ? 'Akceptuj sugestię powiązania' : 'Accept binding suggestion') + '" data-accept-suggestion="' + _esc(sug.key) + '">✓</button>' +
+          '<button class="rb" style="font-size:11px" aria-label="' + (this._lang === 'pl' ? 'Odrzuć sugestię powiązania' : 'Reject binding suggestion') + '" data-reject-suggestion="' + _esc(sug.key) + '">✕</button>' +
           '</div>';
       });
 
@@ -1915,7 +2025,7 @@ class HaNetworkMap extends HTMLElement {
         h += '<div class="tree-item">' +
           '<span class="tree-item-name">' + _esc(devName) + '</span>' +
           '<span style="color:var(--bento-text-secondary);flex:1">' + _esc(entityId) + '</span>' +
-          '<button class="rb" style="font-size:11px" id="unbind-' + _esc(key) + '" data-unbind="' + _esc(key) + '">✕</button>' +
+          '<button class="rb" style="font-size:11px" id="unbind-' + _esc(key) + '" aria-label="' + (this._lang === 'pl' ? 'Usuń powiązanie' : 'Remove binding') + '" data-unbind="' + _esc(key) + '">✕</button>' +
           '</div>';
       });
 
@@ -1928,7 +2038,7 @@ class HaNetworkMap extends HTMLElement {
     if (Object.keys(this._hass?.states || {}).some(e => e.startsWith('device_tracker.'))) {
       h += '<div style="margin-top:16px;padding:16px;background:var(--bento-bg);border-radius:var(--bento-radius-sm)">' +
         '<div style="font-weight:500;margin-bottom:8px">' + this._t('manualBind') + '</div>' +
-        '<select class="fs" id="deviceSelect" style="width:100%;margin-bottom:8px">' +
+        '<select class="fs" id="deviceSelect" aria-label="' + _esc(this._t('haEntity')) + '" style="width:100%;margin-bottom:8px">' +
         '<option value="">— ' + this._t('selectEntity') + '</option>';
 
       Object.keys(this._hass.states).filter(e => e.startsWith('device_tracker.')).forEach(e => {
@@ -2326,7 +2436,7 @@ class HaNetworkMap extends HTMLElement {
     '  .toolbar { flex-direction: column; }' +
     '  .si { min-width: 0; }' +
     '}' +
-    '</style>';
+    _FAMILY_CONTROL_CSS + '</style>';
   }
 
   getCardSize() { return 8; }
@@ -2368,8 +2478,9 @@ class HaNetworkMapEditor extends HTMLElement {
 
   _render() {
     if (!this._hass) return;
+    const familyFocus = _rememberFamilyEditorFocus(this);
     this.shadowRoot.innerHTML = `
-      <style>
+      <style>${_FAMILY_CONTROL_CSS}
         :host { display: block; padding: 16px; }
         h3 { margin: 0 0 16px; font-size: 15px; font-weight: 600; }
         input { outline: none; transition: border-color .2s; width: 100%; padding: 8px 12px;
@@ -2380,16 +2491,17 @@ class HaNetworkMapEditor extends HTMLElement {
       </style>
       <h3>Network Map</h3>
       <div>
-        <label>Title</label>
+        <label for="cf_title">${this._hass?.language?.startsWith('pl') ? 'Tytuł' : 'Title'}</label>
         <input type="text" id="cf_title" value="${_esc(this._config?.title || 'Network Map')}">
       </div>
       <div>
-        <label>Router IP</label>
+        <label for="cf_router_ip">${this._hass?.language?.startsWith('pl') ? 'IP routera' : 'Router IP'}</label>
         <input type="text" id="cf_router_ip" value="${_esc(this._config?.router_ip || '')}">
       
         </div>
     `;
 
+    _restoreFamilyEditorFocus(this, familyFocus);
     const f_title = this.shadowRoot.querySelector('#cf_title');
     if (f_title) {
       f_title.addEventListener('input', (e) => {
