@@ -986,6 +986,16 @@ class HaNetworkMap extends HTMLElement {
       this._readEpoch++;
       this._readRequest = null;
       this._stopRegistryUpdates();
+      this._integrationDevices = [];
+      this._deviceRegistry = [];
+      this._scanResults = {};
+      this._lastScanTime = null;
+      this._listError = false;
+      this._scanError = null;
+      this.selectedDevice = null;
+      this._buildDeviceList();
+      this._doRender();
+      this._loadDeviceRegistry();
     }
     this._subscribeRegistryUpdates();
 
@@ -1037,11 +1047,14 @@ class HaNetworkMap extends HTMLElement {
 
   async _loadDeviceRegistry() {
     if (!this._hass) return;
+    const session = this._readSession();
+    const epoch = this._registryEpoch;
+    const current = () => !this._disconnected && epoch === this._registryEpoch && this._sameReadSession(session, this._readSession());
     try {
-      this._deviceRegistry = await this._hass.callWS({ type: 'config/device_registry/list' });
+      const rows = await this._hass.callWS({ type: 'config/device_registry/list' });
+      if (current()) this._deviceRegistry = Array.isArray(rows) ? rows : [];
     } catch (e) {
-      console.warn('[ha-network-map] device registry load failed:', e);
-      this._deviceRegistry = [];
+      if (current()) this._deviceRegistry = [];
     }
   }
 
@@ -1314,11 +1327,12 @@ class HaNetworkMap extends HTMLElement {
   }
 
   _readSession(hass = this._hass) {
-    return { connection: hass?.connection, userId: hass?.user?.id, admin: hass?.user?.is_admin };
+    return { connection: hass?.connection, userId: hass?.user?.id, admin: hass?.user?.is_admin,
+      instanceId: hass?.config?.instance_id };
   }
 
   _sameReadSession(a, b) {
-    return a.connection === b.connection && a.userId === b.userId && a.admin === b.admin;
+    return a.connection === b.connection && a.userId === b.userId && a.admin === b.admin && a.instanceId === b.instanceId;
   }
 
   _stopRegistryUpdates() {
@@ -1433,7 +1447,7 @@ class HaNetworkMap extends HTMLElement {
     return { connection: hass?.connection, connected: hass?.connection?.connected === true && this._comparisonConnectionReady === true,
       callWS: hass?.callWS, user: hass?.user?.id, admin: hass?.user?.is_admin === true && hass.user.is_active !== false,
       active: hass?.user?.is_active, owner: hass?.user?.is_owner === true, groups: JSON.stringify(hass?.user?.group_ids || []),
-      language: hass?.language || this._lang, source: location.origin,
+      language: hass?.language || this._lang, source: location.origin, instanceId: hass?.config?.instance_id,
       online: this._comparisonBrowserOnline && navigator.onLine !== false };
   }
 
