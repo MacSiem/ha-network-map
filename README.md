@@ -134,13 +134,15 @@ survive an IP change. **Unbind** removes the local reference.
 This integration exposes **no entities**. It is a WebSocket API + bundled
 Lovelace card only — there are no `sensor.*` or `binary_sensor.*` platforms.
 Device and reachability data live in the integration's in-memory state and
-are read by the card over three WebSocket commands:
+are read by the card over the WebSocket commands below. Completed scan history is stored separately in Home Assistant:
 
 | WebSocket command | Access | Description |
 |---|---|---|
 | `ha_network_map/list_devices` | Any logged-in user | Current device map, no network probe |
 | `ha_network_map/status` | Any logged-in user | Last-scan timestamps + device/reachable counts |
 | `ha_network_map/scan` | Admin only | Triggers a fresh TCP reachability probe from the HA host |
+| `ha_network_map/scan_history` | Admin only | Metadata for retained completed scans, without probing |
+| `ha_network_map/compare_scans` | Admin only | Compare two retained scans, without probing |
 
 ## Services
 
@@ -166,13 +168,41 @@ remaining devices are skipped for that run.
 
 A request accepts at most 12 TCP ports. An unmeasured device shows `—`, including
 devices without an IP and public addresses skipped by the default scope guard.
-Scan results and timestamps are held in memory and reset when the integration
-is reloaded or Home Assistant restarts. A temporary list error preserves the
+The current device map and last-scan status are held in memory and reset when
+the integration reloads or Home Assistant restarts. Completed snapshots are
+retained separately for the saved comparison described below. A temporary list error preserves the
 existing map and offers **Retry**, which only reads the device list and does
 not start a scan.
 
 Use active scans only for devices and networks you administer. Reachability is
 an informational check, not a security assessment or a guarantee of availability.
+
+## Saved scan comparison
+
+Administrators can open **Scan comparison** and select two completed scans.
+The view shows each scan’s UTC times, source, TCP method, configured scope,
+limits and coverage. Devices with a stable registry ID or MAC can be compared
+across IP changes. **Not in this scan** means the device was absent from that
+measurement; it is not a claim of downtime. Incompatible methods or scopes,
+missing identity and capped coverage remain partial or unconfirmed.
+
+Completed scans are retained locally in Home Assistant: up to 30 scans from
+30 days, with at most 256 measured devices per scan. The private store contains
+device identifiers, labels and local addresses. It survives restarts and stays
+subject to those limits. Only completed scans are captured; busy, cancelled or
+failed requests do not invent history. If saving fails, the previous confirmed
+history remains and the unavailable history status is shown. Opening, selecting
+or paging through a comparison does not start a scan or rewrite the store.
+
+After updating from HACS, restart Home Assistant to load the integration code,
+then reload the browser. No manual history migration is needed. Existing device
+preferences, tracker bindings and user-managed dashboard resources are preserved.
+Unknown or damaged history is reported as unavailable and is not silently reset.
+
+A scan’s **Success** confirms that the scan completed and the device list was
+read. It does not mean every device is reachable. **Partial** means the scan
+completed but the list could not be refreshed; **Retry** only reads that list.
+A busy or unconfirmed response never triggers an automatic repeat scan.
 
 ## Automation example
 

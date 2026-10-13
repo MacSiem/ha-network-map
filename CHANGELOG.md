@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.1.0 (2026-10-13)
+
+- Compare two saved, completed TCP scans by stable device identity, with new devices, devices absent from a scan and IP changes. Show actual source, times, scope, method and coverage; absence from a scan does not mean offline.
+- Keep bounded scan history in Home Assistant across restarts, with admin-only history and comparison reads. Opening comparison never starts a probe.
+- Show explicit scan outcomes for completed, empty, busy, malformed, denied and partial results, with safe error guidance in English and Polish.
+- Clear incompatible device data and comparison results after account, connection or Home Assistant instance changes, including late replies.
+- Keep all tabs, device details, sorting and actions accessible in narrow cards, with larger controls, keyboard focus and preserved editor drafts.
+- Explain optional browser-local tracker bindings without changing device names, addresses or network settings.
+
 ## 5.0.21 (2026-10-08)
 
 - Preserve a resource edited during an ownership write failure; rollback rechecks its current ID, URL and type before deletion.
